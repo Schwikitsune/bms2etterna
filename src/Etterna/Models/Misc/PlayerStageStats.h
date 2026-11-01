@@ -81,6 +81,12 @@ class PlayerStageStats
 	 * If health recovery is possible after failing (requires two players),
 	 * this is only set if both players were failing at the same time. */
 	bool m_bFailed{};
+	// BMS gauge (a BMSGauge) the song was cleared on, -1 when not cleared or
+	// not played on a BMS gauge; with gauge auto shift it can be below the
+	// chosen gauge
+	int m_iBMSClearGauge{ -1 };
+	// LR2 empty POORs: presses up to a second before a note in that lane
+	int m_iEmptyPoors{ 0 };
 
 	int m_iPossibleDancePoints{};
 	int m_iCurPossibleDancePoints{};

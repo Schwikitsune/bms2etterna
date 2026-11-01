@@ -545,7 +545,9 @@ Calc::InitializeHands(const std::vector<NoteInfo>& NoteInfo,
 
 	// if debug, force params to load and reset pmods and base diffs
 	if (debugmode || loadparams) {
+#if !defined(STANDALONE_CALC)
 		ulbu_in_charge->load_calc_params_from_disk(true);
+#endif
 		for (const auto& hand : both_hands) {
 			for (auto& v : pmod_vals.at(hand)) {
 				std::fill(v.begin(), v.end(), 1.F);

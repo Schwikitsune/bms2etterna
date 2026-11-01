@@ -10,6 +10,12 @@ struct GChordStreamMod
 	const std::string name = "GenericChordStreamMod";
 	const int min_tap_size = jump;
 
+	// count every chord size as chordstream instead of only jumps. 7k
+	// chordstream is mostly 3 and 4 note chords, and jumps in a 7k stream
+	// barely make it chordstream, so they only count partly there
+	bool all_chord_sizes = false;
+	float all_chord_jump_weight = 0.5F;
+
 #pragma region params
 	float min_mod = 0.6F;
 	float max_mod = 1.1F;
@@ -53,6 +59,7 @@ struct GChordStreamMod
 		{ "jack_scaler", &jack_scaler },
 
 		{ "decay_factor", &decay_factor },
+		{ "all_chord_jump_weight", &all_chord_jump_weight },
 	};
 #pragma endregion params and param map
 
@@ -89,8 +96,18 @@ struct GChordStreamMod
 			return neutral;
 		}
 
+		auto chord_taps = static_cast<float>(itvi.taps_by_size.at(min_tap_size));
+		if (all_chord_sizes) {
+			chord_taps =
+			  chord_taps * all_chord_jump_weight +
+			  static_cast<float>(
+				std::accumulate(itvi.taps_by_size.begin() + min_tap_size + 1,
+								itvi.taps_by_size.end(),
+								0));
+		}
+
 		// at least 1 tap but no jumps
-		if (itvi.taps_by_size.at(min_tap_size) == 0) {
+		if (chord_taps == 0.F) {
 			decay_mod();
 			return pmod;
 		}
@@ -101,7 +118,7 @@ struct GChordStreamMod
 
 		// creepy banana
 		total_prop =
-		  static_cast<float>(itvi.taps_by_size.at(min_tap_size) + prop_buffer) /
+		  (chord_taps + prop_buffer) /
 		  (t_taps - prop_buffer) * total_prop_scaler;
 		total_prop =
 		  std::clamp(fastsqrt(total_prop), total_prop_min, total_prop_max);

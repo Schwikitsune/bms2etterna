@@ -31,6 +31,33 @@ XToString(DrainType);
 XToLocalizedString(DrainType);
 LuaXType(DrainType);
 
+static const char* BMSGaugeNames[] = {
+	"Easy",
+	"Normal",
+	"Hard",
+	"Death",
+};
+XToString(BMSGauge);
+XToLocalizedString(BMSGauge);
+LuaXType(BMSGauge);
+
+static const char* BMSJudgeRankNames[] = {
+	"Easy",
+	"Normal",
+	"Hard",
+	"VeryHard",
+};
+XToString(BMSJudgeRank);
+XToLocalizedString(BMSJudgeRank);
+LuaXType(BMSJudgeRank);
+
+static const char* BMSArrangeNames[] = {
+	"Off", "Mirror", "Random", "RRandom", "SRandom", "HRandom", "Custom",
+};
+XToString(BMSArrange);
+XToLocalizedString(BMSArrange);
+LuaXType(BMSArrange);
+
 void
 NextFloat(float fValues[], int size);
 void
@@ -56,6 +83,11 @@ PlayerOptions::Init()
 {
 	m_LifeType = LifeType_Bar;
 	m_DrainType = DrainType_Normal;
+	m_BMSGauge = BMSGauge_Normal;
+	m_BMSJudgeRank = BMSJudgeRank_Easy;
+	m_BMSArrange = BMSArrange_Off;
+	m_sBMSLanes = "1234567";
+	m_bBMSAutoShift = false;
 	m_BatteryLives = 4;
 	m_MinTNSToHideNotes = PREFSMAN->m_MinTNSToHideNotes.Get();
 	m_bSetScrollSpeed = false;
@@ -112,6 +144,11 @@ PlayerOptions::Approach(const PlayerOptions& other, float fDeltaSeconds)
 
 	DO_COPY(m_LifeType);
 	DO_COPY(m_DrainType);
+	DO_COPY(m_BMSGauge);
+	DO_COPY(m_BMSJudgeRank);
+	DO_COPY(m_BMSArrange);
+	DO_COPY(m_sBMSLanes);
+	DO_COPY(m_bBMSAutoShift);
 	DO_COPY(m_BatteryLives);
 	APPROACH(fTimeSpacing);
 	APPROACH(fScrollSpeed);
@@ -346,6 +383,63 @@ PlayerOptions::GetMods(std::vector<std::string>& AddTo, bool bForceNoteSkin) con
 	if (m_bPractice)
 		AddTo.push_back("PracticeMode");
 
+	switch (m_BMSGauge) {
+		case BMSGauge_Easy:
+			AddTo.push_back("EasyGauge");
+			break;
+		case BMSGauge_Hard:
+			AddTo.push_back("HardGauge");
+			break;
+		case BMSGauge_Death:
+			AddTo.push_back("DeathGauge");
+			break;
+		case BMSGauge_Normal:
+		default:
+			break;
+	}
+
+	if (m_bBMSAutoShift)
+		AddTo.push_back("GAS");
+
+	switch (m_BMSJudgeRank) {
+		case BMSJudgeRank_Normal:
+			AddTo.push_back("NormalJudge");
+			break;
+		case BMSJudgeRank_Hard:
+			AddTo.push_back("HardJudge");
+			break;
+		case BMSJudgeRank_VeryHard:
+			AddTo.push_back("VeryHardJudge");
+			break;
+		case BMSJudgeRank_Easy:
+		default:
+			break;
+	}
+
+	switch (m_BMSArrange) {
+		case BMSArrange_Mirror:
+			AddTo.push_back("BMSMirror");
+			break;
+		case BMSArrange_Random:
+			AddTo.push_back("BMSRandom");
+			break;
+		case BMSArrange_RRandom:
+			AddTo.push_back("BMSRRandom");
+			break;
+		case BMSArrange_SRandom:
+			AddTo.push_back("BMSSRandom");
+			break;
+		case BMSArrange_HRandom:
+			AddTo.push_back("BMSHRandom");
+			break;
+		case BMSArrange_Custom:
+			AddTo.push_back("Lanes" + m_sBMSLanes);
+			break;
+		case BMSArrange_Off:
+		default:
+			break;
+	}
+
 	switch (m_FailType) {
 		case FailType_Immediate:
 			break;
@@ -557,6 +651,55 @@ PlayerOptions::FromOneModString(const std::string& sOneMod,
 		m_DrainType = DrainType_SuddenDeath;
 	} else if (sBit == "normal-drain" && (forReplay || !DLMAN->InGameplay())) {
 		m_DrainType = DrainType_Normal;
+	} else if ((sBit == "easygauge" || sBit == "normalgauge" ||
+				sBit == "groovegauge" || sBit == "hardgauge" ||
+				sBit == "deathgauge") &&
+			   (forReplay || !DLMAN->InGameplay())) {
+		if (sBit == "easygauge")
+			m_BMSGauge = BMSGauge_Easy;
+		else if (sBit == "hardgauge")
+			m_BMSGauge = BMSGauge_Hard;
+		else if (sBit == "deathgauge")
+			m_BMSGauge = BMSGauge_Death;
+		else
+			m_BMSGauge = BMSGauge_Normal;
+	} else if ((sBit == "easyjudge" || sBit == "normaljudge" ||
+				sBit == "hardjudge" || sBit == "veryhardjudge") &&
+			   (forReplay || !DLMAN->InGameplay())) {
+		if (sBit == "normaljudge")
+			m_BMSJudgeRank = BMSJudgeRank_Normal;
+		else if (sBit == "hardjudge")
+			m_BMSJudgeRank = BMSJudgeRank_Hard;
+		else if (sBit == "veryhardjudge")
+			m_BMSJudgeRank = BMSJudgeRank_VeryHard;
+		else
+			m_BMSJudgeRank = BMSJudgeRank_Easy;
+	} else if ((sBit == "bmsoff" || sBit == "bmsmirror" ||
+				sBit == "bmsrandom" || sBit == "bmsrrandom" ||
+				sBit == "bmssrandom" || sBit == "bmshrandom") &&
+			   (forReplay || !DLMAN->InGameplay())) {
+		if (!on || sBit == "bmsoff")
+			m_BMSArrange = BMSArrange_Off;
+		else if (sBit == "bmsmirror")
+			m_BMSArrange = BMSArrange_Mirror;
+		else if (sBit == "bmsrandom")
+			m_BMSArrange = BMSArrange_Random;
+		else if (sBit == "bmsrrandom")
+			m_BMSArrange = BMSArrange_RRandom;
+		else if (sBit == "bmssrandom")
+			m_BMSArrange = BMSArrange_SRandom;
+		else
+			m_BMSArrange = BMSArrange_HRandom;
+	} else if (sBit == "gas" && (forReplay || !DLMAN->InGameplay())) {
+		m_bBMSAutoShift = on;
+	} else if (sBit.size() > 5 && sBit.compare(0, 5, "lanes") == 0 &&
+			   (forReplay || !DLMAN->InGameplay())) {
+		if (!on) {
+			m_BMSArrange = BMSArrange_Off;
+		} else {
+			m_sBMSLanes = sBit.substr(5);
+			m_BMSArrange = BMSArrange_Custom;
+		}
 	} else if (sBit == "boost")
 		SET_FLOAT(fAccels[ACCEL_BOOST])
 	else if (sBit == "brake" || sBit == "land")
@@ -992,6 +1135,11 @@ PlayerOptions::operator==(const PlayerOptions& other) const
 	}
 	COMPARE(m_LifeType);
 	COMPARE(m_DrainType);
+	COMPARE(m_BMSGauge);
+	COMPARE(m_BMSJudgeRank);
+	COMPARE(m_BMSArrange);
+	COMPARE(m_sBMSLanes);
+	COMPARE(m_bBMSAutoShift);
 	COMPARE(m_BatteryLives);
 	COMPARE(m_fTimeSpacing);
 	COMPARE(m_fScrollSpeed);
@@ -1044,6 +1192,11 @@ PlayerOptions::operator=(PlayerOptions const& other)
 	m_Speed##x = other.m_Speed##x;
 	CPY(m_LifeType);
 	CPY(m_DrainType);
+	CPY(m_BMSGauge);
+	CPY(m_BMSJudgeRank);
+	CPY(m_BMSArrange);
+	CPY(m_sBMSLanes);
+	CPY(m_bBMSAutoShift);
 	CPY(m_BatteryLives);
 	CPY_SPEED(fTimeSpacing);
 	CPY_SPEED(fScrollSpeed);
@@ -1210,6 +1363,15 @@ PlayerOptions::ContainsTransformOrTurn() const
 	return false;
 }
 
+bool
+PlayerOptions::UsesSeededBMSArrange() const
+{
+	return m_BMSArrange == BMSArrange_Random ||
+		   m_BMSArrange == BMSArrange_RRandom ||
+		   m_BMSArrange == BMSArrange_SRandom ||
+		   m_BMSArrange == BMSArrange_HRandom;
+}
+
 std::vector<std::string>
 PlayerOptions::GetInvalidatingModifiers() const
 {
@@ -1323,6 +1485,11 @@ PlayerOptions::GetSavedPrefsString() const
 	SAVE(m_fCover);
 	SAVE(m_LifeType);
 	SAVE(m_DrainType);
+	SAVE(m_BMSGauge);
+	SAVE(m_BMSJudgeRank);
+	SAVE(m_BMSArrange);
+	SAVE(m_sBMSLanes);
+	SAVE(m_bBMSAutoShift);
 	SAVE(m_BatteryLives);
 	SAVE(m_FailType);
 	SAVE(m_bForceHoldReleases);
@@ -1346,6 +1513,11 @@ PlayerOptions::ResetPrefs(ResetPrefsType type)
 	}
 	CPY(m_LifeType);
 	CPY(m_DrainType);
+	CPY(m_BMSGauge);
+	CPY(m_BMSJudgeRank);
+	CPY(m_BMSArrange);
+	CPY(m_sBMSLanes);
+	CPY(m_bBMSAutoShift);
 	CPY(m_BatteryLives);
 	CPY(m_FailType);
 	CPY(m_MinTNSToHideNotes);
@@ -1397,6 +1569,27 @@ class LunaPlayerOptions : public Luna<PlayerOptions>
 
 	SECENUM_INTERFACE(LifeSetting, LifeType, LifeType);
 	SECENUM_INTERFACE(DrainSetting, DrainType, DrainType);
+	SECENUM_INTERFACE(GaugeSetting, BMSGauge, BMSGauge);
+	SECENUM_INTERFACE(JudgeRankSetting, BMSJudgeRank, BMSJudgeRank);
+	SECENUM_INTERFACE(ArrangeSetting, BMSArrange, BMSArrange);
+	static int BMSLanes(T* p, lua_State* L)
+	{
+		const auto original = p->m_sBMSLanes;
+		if (lua_isstring(L, 1) && !DLMAN->InGameplay()) {
+			p->m_sBMSLanes = SArg(1);
+		}
+		lua_pushstring(L, original.c_str());
+		return 1;
+	}
+	static int BMSAutoShift(T* p, lua_State* L)
+	{
+		const auto original = p->m_bBMSAutoShift;
+		if (lua_isboolean(L, 1) && !DLMAN->InGameplay()) {
+			p->m_bBMSAutoShift = BArg(1);
+		}
+		lua_pushboolean(L, original);
+		return 1;
+	}
 	INT_INTERFACE(BatteryLives, BatteryLives);
 	FLOAT_INTERFACE(TimeSpacing, TimeSpacing, true);
 	FLOAT_INTERFACE(MaxScrollBPM, MaxScrollBPM, true);
@@ -1787,6 +1980,11 @@ class LunaPlayerOptions : public Luna<PlayerOptions>
 
 		ADD_METHOD(LifeSetting);
 		ADD_METHOD(DrainSetting);
+		ADD_METHOD(GaugeSetting);
+		ADD_METHOD(JudgeRankSetting);
+		ADD_METHOD(ArrangeSetting);
+		ADD_METHOD(BMSLanes);
+		ADD_METHOD(BMSAutoShift);
 		ADD_METHOD(BatteryLives);
 		ADD_METHOD(TimeSpacing);
 		ADD_METHOD(MaxScrollBPM);

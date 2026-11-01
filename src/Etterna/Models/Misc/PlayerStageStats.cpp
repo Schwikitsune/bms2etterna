@@ -50,6 +50,8 @@ PlayerStageStats::InternalInit()
 	m_vpPossibleSteps.clear();
 	m_iStepsPlayed = 0;
 	m_bFailed = false;
+	m_iBMSClearGauge = -1;
+	m_iEmptyPoors = 0;
 	m_iPossibleDancePoints = 0;
 	m_iCurPossibleDancePoints = 0;
 	m_iActualDancePoints = 0;
@@ -119,6 +121,8 @@ PlayerStageStats::AddStats(const PlayerStageStats& other)
 		m_vpPossibleSteps.push_back(s);
 	m_iStepsPlayed += other.m_iStepsPlayed;
 	m_bFailed |= static_cast<int>(other.m_bFailed);
+	m_iBMSClearGauge = other.m_iBMSClearGauge;
+	m_iEmptyPoors += other.m_iEmptyPoors;
 	m_iPossibleDancePoints += other.m_iPossibleDancePoints;
 	m_iActualDancePoints += other.m_iActualDancePoints;
 	m_iCurPossibleDancePoints += other.m_iCurPossibleDancePoints;
@@ -905,6 +909,7 @@ LuaFunction(GetGradeFromPercent, GetGradeFromPercent(FArg(1)))
 				  GetPercentageOfTaps(Enum::Check<TapNoteScore>(L, 1)))
 	DEFINE_METHOD(GetBestFullComboTapNoteScore, GetBestFullComboTapNoteScore())
 	DEFINE_METHOD(GetFailed, m_bFailed)
+	DEFINE_METHOD(GetEmptyPoorCount, m_iEmptyPoors)
 	DEFINE_METHOD(GetSongsPassed, m_iSongsPassed)
 	DEFINE_METHOD(GetSongsPlayed, m_iSongsPlayed)
 
@@ -1141,6 +1146,7 @@ LuaFunction(GetGradeFromPercent, GetGradeFromPercent(FArg(1)))
 		ADD_METHOD(GetRadarPossible);
 		ADD_METHOD(GetBestFullComboTapNoteScore);
 		ADD_METHOD(GetFailed);
+		ADD_METHOD(GetEmptyPoorCount);
 		ADD_METHOD(SetScore);
 		ADD_METHOD(GetCurMaxScore);
 		ADD_METHOD(SetCurMaxScore);

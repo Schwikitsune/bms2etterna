@@ -63,6 +63,24 @@ local judges = {
 	"TapNoteScore_Miss"
 }
 
+-- 7k is judged by the LR2 judge rank windows, rescoring to etterna judges
+-- would recount every note on J4 windows, so 7k always shows the saved score
+local is7k = hideMSD()
+local rescoreJudgeEtterna = getRescoredJudge
+local rescoreWife3Etterna = getRescoredWife3Judge
+local function getRescoredJudge(offsetVector, judgeScale, index)
+	if is7k then
+		return score:GetTapNoteScore(judges[index])
+	end
+	return rescoreJudgeEtterna(offsetVector, judgeScale, index)
+end
+local function getRescoredWife3Judge(version, judgeScale, rst)
+	if is7k then
+		return score:GetWifeScore() * 100
+	end
+	return rescoreWife3Etterna(version, judgeScale, rst)
+end
+
 t[#t+1] = Def.ActorFrame {
 	Name = "SongInfo",
 
@@ -429,6 +447,10 @@ local function scoreBoard(pn, position)
 					if not rate then rate = getCurRateValue() end
 				end
 				rate = notShit.round(rate,3)
+				if hideMSD() then
+					self:settext("")
+					return
+				end
 				local meter = GAMESTATE:GetCurrentSteps():GetMSD(rate, 1)
 				if meter < 10 then
 					self:settextf("%4.2f", meter)
@@ -453,6 +475,10 @@ local function scoreBoard(pn, position)
 				self:queuecommand("Set")
 			end,
 			SetCommand = function(self)
+				if hideMSD() then
+					self:settext("")
+					return
+				end
 				local meter = score:GetSkillsetSSR("Overall")
 				self:settextf("%5.2f", meter)
 				self:diffuse(byMSD(meter))
@@ -528,6 +554,10 @@ local function scoreBoard(pn, position)
 					wv = 3 -- this should really only be applicable if we can convert the score
 					local ws = "Wife" .. wv .. " J"
 					self:diffuse(getGradeColor(score:GetWifeGrade()))
+					if is7k then
+						self:settextf("%05.2f%% (%s)", notShit.floor(rescorepercent, 2), getBMSJudgeRankLabel(score))
+						return
+					end
 					self:settextf(
 						"%05.2f%% (%s)",
 						notShit.floor(rescorepercent, 2), ws .. js
@@ -537,7 +567,7 @@ local function scoreBoard(pn, position)
 					self:queuecommand("Set")
 				end,
 				CodeMessageCommand = function(self, params)
-					if usingCustomWindows then
+					if usingCustomWindows or is7k then
 						return
 					end
 
@@ -594,6 +624,10 @@ local function scoreBoard(pn, position)
 					wv = 3 -- this should really only be applicable if we can convert the score
 					local ws = "Wife" .. wv .. " J"
 					self:diffuse(getGradeColor(score:GetWifeGrade()))
+					if is7k then
+						self:settextf("%05.4f%% (%s)", notShit.floor(rescorepercent, 4), getBMSJudgeRankLabel(score))
+						return
+					end
 					self:settextf(
 						"%05.4f%% (%s)",
 						notShit.floor(rescorepercent, 4), ws .. js
@@ -603,7 +637,7 @@ local function scoreBoard(pn, position)
 					self:queuecommand("Set")
 				end,
 				CodeMessageCommand = function(self, params)
-					if usingCustomWindows then
+					if usingCustomWindows or is7k then
 						return
 					end
 
@@ -785,6 +819,12 @@ local function scoreBoard(pn, position)
 					self:queuecommand("Set")
 				end,
 				SetCommand = function(self)
+					-- 7k: LR2 empty POORs of this play, they are not saved with the score
+					if hideMSD() and judgmentName == "TapNoteScore_Miss" and pss:GetEmptyPoorCount() > 0
+							and score:GetScoreid() == pss:GetHighScore():GetScoreid() then
+						self:settextf("%d +%d", self:GetParent().jcount, pss:GetEmptyPoorCount())
+						return
+					end
 					self:settext(self:GetParent().jcount)
 				end,
 			},
@@ -1348,6 +1388,8 @@ local function scoreBoard(pn, position)
 				RecalculateGraphsMessageCommand = function(self, params)
 					-- called by the end of a codemessagecommand somewhere else
 					if not ms.JudgeScalers[params.judge] then return end
+					-- rescoring a 7k replay on etterna windows would redo its life graph wrong
+					if is7k then return end
 					local success = SCREENMAN:GetTopScreen():RescoreReplay(SCREENMAN:GetTopScreen():GetStageStats():GetPlayerStageStats(), ms.JudgeScalers[params.judge], score, usingCustomWindows and currentCustomWindowConfigUsesOldestNoteFirst())
 					if not success then ms.ok("Failed to recalculate score for some reason...") return end
 					self:playcommand("Begin")

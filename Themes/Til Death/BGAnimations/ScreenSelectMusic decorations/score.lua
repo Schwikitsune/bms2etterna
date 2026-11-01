@@ -424,6 +424,10 @@ local l = Def.ActorFrame {
 				if not judge then judge = 4 end
 				if judge < 4 then judge = 4 end
 				local js = judge ~= 9 and judge or "ustice"
+				if hideMSD() then
+					ws = getBMSJudgeRankLabel(score)
+					js = ""
+				end
 				local perc = score:GetWifeScore() * 100
 				if perc > 99.65 then
 					self:settextf("%05.4f%% (%s)", notShit.floor(perc, 4), ws .. js)
@@ -440,7 +444,7 @@ local l = Def.ActorFrame {
 			self:xy(65, 30):zoom(0.6):halign(0):settext("")
 		end,
 		DisplayCommand = function(self)
-			if score:GetWifeScore() == 0 then
+			if score:GetWifeScore() == 0 or hideMSD() then
 				self:settext("")
 			else
 				local overall = score:GetSkillsetSSR("Overall")
@@ -551,6 +555,10 @@ local l = Def.ActorFrame {
 			self:xy(frameX + offsetX + 55,frameHeight - headeroffY - 65 - offsetY):zoom(0.45):halign(0.5):settext("")
 		end,
 		DisplayCommand = function(self)
+			if hideMSD() then
+				self:settext(getBMSJudgeRankLabel(score))
+				return
+			end
 			local j = table.find(ms.JudgeScalers, notShit.round(score:GetJudgeScale(), 2))
 			if not j then j = 4 end
 			if j < 4 then j = 4 end

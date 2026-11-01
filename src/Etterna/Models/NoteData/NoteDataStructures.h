@@ -95,6 +95,8 @@ enum CalcPatternMod
 	OldOHJScaler,
 	OldRollScaler,
 	HandBalance,
+	SpiderBracket,
+	DelayRhythm,
 	NUM_CalcPatternMod,
 	CalcPatternMod_Invalid,
 };

@@ -2,6 +2,9 @@ local update = false
 local showOnline = false
 local recentactive = false
 local percentactive = false
+-- 7k only: best clears, sorted by pack level and then lamp
+local bestactive = false
+local bestList = {}
 local function BroadcastIfActive(msg)
 	if update then
 		MESSAGEMAN:Broadcast(msg)
@@ -15,6 +18,7 @@ local translated_info = {
 	Local = THEME:GetString("TabProfile", "Local"),
 	Recent = THEME:GetString("TabProfile", "Recent"),
 	Percent = THEME:GetString("TabProfile", "Percent"),
+	Best = THEME:GetString("TabProfile", "Best"),
 	NextPage = THEME:GetString("TabProfile", "NextPage"),
 	PrevPage = THEME:GetString("TabProfile", "PreviousPage"),
 	Save = THEME:GetString("TabProfile", "SaveProfile"),
@@ -114,6 +118,47 @@ local function ButtonActive(self)
 	return isOver(self) and update
 end
 
+-- one entry per cleared 7k chart: an easy clear on a higher level ranks above
+-- any lamp on a lower one, then the better lamp, then the better percent
+local function buildBestList()
+	bestList = {}
+	local seen = {}
+	SCOREMAN:SortRecentScoresForGame()
+	local n = 1
+	local hs = SCOREMAN:GetRecentScoreForGame(n)
+	while hs do
+		local ck = hs:GetChartKey()
+		if not seen[ck] then
+			seen[ck] = true
+			local steps = SONGMAN:GetStepsByChartKey(ck)
+			if steps and steps:GetStepsType() == "StepsType_Kb7_Single" then
+				local lamp, best = getBestBMSLamp(ck)
+				if lamp then
+					local song = SONGMAN:GetSongByChartKey(ck)
+					local level, levelName = getBMSLevel(song, steps)
+					bestList[#bestList + 1] = {
+						score = best, song = song, steps = steps, lamp = lamp,
+						level = level, levelName = levelName, wife = best:GetWifeScore(),
+					}
+				end
+			end
+		end
+		n = n + 1
+		hs = SCOREMAN:GetRecentScoreForGame(n)
+	end
+	table.sort(bestList, function(a, b)
+		if a.level ~= b.level then return a.level > b.level end
+		if a.lamp ~= b.lamp then return a.lamp < b.lamp end
+		return a.wife > b.wife
+	end)
+end
+
+-- level column for 7k, where there is no SSR to show
+local function levelText(song, steps)
+	local _, name = getBMSLevel(song, steps)
+	return name
+end
+
 -- The input callback for mouse clicks already exists within the tabmanager and redefining it within the local scope does nothing but create confusion - mina
 local r = Def.ActorFrame {
 	InitCommand = function(self)
@@ -139,7 +184,7 @@ local function rankingLabel(i)
 			self:visible(false)
 		end,
 		UpdateRankingMessageCommand = function(self)
-			if rankingSkillset > 1 and update and not recentactive then
+			if rankingSkillset > 1 and update and not recentactive and not bestactive then
 				if not showOnline then
 					ths = SCOREMAN:GetTopSSRHighScoreForGame(i + (scoresperpage * (rankingPage - 1)), ms.SkillSets[rankingSkillset])
 					if ths then
@@ -193,7 +238,10 @@ local function rankingLabel(i)
 			end,
 			DisplayProfileRankingLabelsMessageCommand = function(self)
 				if not showOnline then
-					if ths then
+					if ths and hideMSD() then
+						self:settext(levelText(thssong, thssteps))
+						self:diffuse(byValidity(ths:GetEtternaValid()))
+					elseif ths then
 						self:settextf("%5.2f", ths:GetSkillsetSSR(ms.SkillSets[rankingSkillset]))
 						self:diffuse(byValidity(ths:GetEtternaValid()))
 					else
@@ -373,20 +421,27 @@ local function rankingButton(i)
 		InitCommand = function(self)
 			self:xy(rankingX + (i - 1) * rankingTitleSpacing, rankingY * 1.15)
 		end,
+		BeginCommand = function(self)
+			self:visible(not hideMSD())
+		end,
+		UpdateRankingMessageCommand = function(self)
+			self:visible(not hideMSD())
+		end,
 		UIElements.QuadButton(1, 1) .. {
 			InitCommand = function(self)
 				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames")):diffusealpha(0.2)
 			end,
 			SetCommand = function(self)
-				if i == rankingSkillset and not recentactive then
+				if i == rankingSkillset and not recentactive and not bestactive then
 					self:diffusealpha(1)
 				else
 					self:diffusealpha(0.2)
 				end
 			end,
 			MouseDownCommand = function(self, params)
-				if params.event == "DeviceButton_left mouse button" and update then
+				if params.event == "DeviceButton_left mouse button" and update and not hideMSD() then
 					recentactive = false
+					bestactive = false
 					rankingSkillset = i
 					rankingPage = 1
 					if not percentactive then
@@ -474,7 +529,10 @@ local function recentLabel(i)
 				self:x(15):maxwidth(160)
 			end,
 			DisplayProfileRankingLabelsMessageCommand = function(self)
-				if ths then
+				if ths and hideMSD() then
+					self:settext(levelText(thssong, thssteps))
+					self:diffuse(byValidity(ths:GetEtternaValid()))
+				elseif ths then
 					self:settextf("%5.2f", ths:GetSkillsetSSR(ms.SkillSets[1]))
 					self:diffuse(byValidity(ths:GetEtternaValid()))
 				else
@@ -633,10 +691,17 @@ local function recentButton()
 			end,
 			MouseDownCommand = function(self, params)
 				if params.event == "DeviceButton_left mouse button" and update then
-					recentactive = true
-					percentactive = false
+					bestactive = false
 					rankingPage = 1
-					SCOREMAN:SortRecentScoresForGame()
+					-- 7k has no overall button to go back to the profile, so recent toggles
+					if recentactive and hideMSD() then
+						recentactive = false
+						rankingSkillset = 1
+					else
+						recentactive = true
+						percentactive = false
+						SCOREMAN:SortRecentScoresForGame()
+					end
 					BroadcastIfActive("UpdateRanking")
 				end
 			end,
@@ -686,12 +751,15 @@ local function percentButton()
 					percentactive = not percentactive
 					showOnline = false
 					recentactive = false
+					bestactive = false
 					rankingPage = 1
 					if rankingSkillset == 1 then
 						rankingSkillset = 2
 					end
 
-					if not percentactive then
+					if not percentactive and hideMSD() then
+						rankingSkillset = 1
+					elseif not percentactive then
 						SCOREMAN:SortSSRsForGame(ms.SkillSets[rankingSkillset])
 					else
 						SCOREMAN:SortSSRsByPercentForGame()
@@ -718,6 +786,178 @@ local function percentButton()
 			end,
 			BeginCommand = function(self)
 				self:settext(translated_info["Percent"])
+			end
+		}
+	}
+	return t
+end
+
+
+local function bestLabel(i)
+	local entry
+
+	local t = Def.ActorFrame {
+		InitCommand = function(self)
+			self:xy(rankingX - 22 , rankingY + offsetY + 10 + (i - 1) * scoreYspacing)
+			self:visible(false)
+		end,
+		UpdateRankingMessageCommand = function(self)
+			entry = nil
+			if bestactive and update and not showOnline then
+				entry = bestList[i + (scoresperpage * (rankingPage - 1))]
+			end
+			self:visible(entry ~= nil)
+			if entry then
+				self:playcommand("DisplayBest")
+			end
+		end,
+		LoadFont("Common Large") .. {
+			Name = "besttext1",
+			InitCommand = function(self)
+				self:halign(0.5):zoom(fontScale):maxwidth(100)
+			end,
+			DisplayBestCommand = function(self)
+				self:settext(((rankingPage - 1) * scoresperpage) + i .. ".")
+				self:diffuse(getMainColor("positive"))
+				self:visible(IsUsingWideScreen())
+			end
+		},
+		LoadFont("Common Large") .. {
+			Name = "besttext2",
+			InitCommand = function(self)
+				self:halign(0):zoom(fontScale):x(15):maxwidth(160)
+			end,
+			DisplayBestCommand = function(self)
+				self:settext(entry.levelName)
+				self:diffuse(getMainColor("positive"))
+			end
+		},
+		LoadFont("Common Large") .. {
+			Name = "besttext3",
+			InitCommand = function(self)
+				self:halign(0):zoom(fontScale):x(55):maxwidth(580)
+			end,
+			DisplayBestCommand = function(self)
+				self:settext(entry.song and entry.song:GetDisplayMainTitle() or "")
+				self:diffuse(getMainColor("positive"))
+			end
+		},
+		LoadFont("Common Large") .. {
+			Name = "besttext4",
+			InitCommand = function(self)
+				self:halign(0.5):zoom(fontScale):x(220)
+			end,
+			DisplayBestCommand = function(self)
+				self:settext(string.format("%.2f", entry.score:GetMusicRate()):gsub("%.?0+$", "") .. "x")
+				self:diffuse(getMainColor("positive"))
+			end
+		},
+		LoadFont("Common Large") .. {
+			Name = "besttext5",
+			InitCommand = function(self)
+				self:halign(0):zoom(fontScale):x(240):maxwidth(160)
+			end,
+			DisplayBestCommand = function(self)
+				self:settextf("%5.2f%%", entry.wife * 100)
+				self:diffuse(getGradeColor(entry.score:GetWifeGrade()))
+			end
+		},
+		LoadFont("Common Large") .. {
+			Name = "besttext6",
+			InitCommand = function(self)
+				self:halign(0.5):zoom(fontScale):x(300):maxwidth(120)
+			end,
+			DisplayBestCommand = function(self)
+				self:settext(getBMSLampInfo(entry.lamp, 1))
+				self:diffuse(getBMSLampInfo(entry.lamp, 2))
+			end
+		},
+		LoadFont("Common Normal") .. {
+			Name = "besttext7",
+			InitCommand = function(self)
+				self:x(capWideScale(318, 330)):zoom(fontScale + 0.05):halign(0)
+			end,
+			DisplayBestCommand = function(self)
+				self:settext(getScoreDate(entry.score):sub(1, 10))
+			end,
+		},
+		UIElements.QuadButton(1, 1) .. {
+			InitCommand = function(self)
+				self:x(capWideScale(15,-7)):halign(0):diffusealpha(buttondiffuse)
+			end,
+			DisplayBestCommand = function(self)
+				self:zoomto(frameWidth - capWideScale(14,10), scoreYspacing * .995)
+			end,
+			MouseDownCommand = function(self, params)
+				if bestactive and update and entry and entry.song and params.event == "DeviceButton_left mouse button" then
+					whee:SelectSong(entry.song)
+				end
+			end,
+			MouseOverCommand = function(self)
+				for i = 1,7 do
+					self:GetParent():GetChild("besttext" .. i):diffusealpha(0.7)
+				end
+			end,
+			MouseOutCommand = function(self)
+				for i = 1,7 do
+					self:GetParent():GetChild("besttext" .. i):diffusealpha(1)
+				end
+			end,
+		},
+	}
+	return t
+end
+
+local function bestButton()
+	local t = Def.ActorFrame {
+		InitCommand = function(self)
+			self:xy(rankingX + (4.5) * rankingTitleSpacing, 24 * 0.75):valign(1)
+		end,
+		BeginCommand = function(self)
+			self:visible(hideMSD())
+		end,
+		UIElements.QuadButton(1, 1) .. {
+			InitCommand = function(self)
+				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames")):diffusealpha(0.2)
+			end,
+			SetCommand = function(self)
+				if bestactive then
+					self:diffusealpha(1)
+				else
+					self:diffusealpha(0.2)
+				end
+			end,
+			MouseDownCommand = function(self, params)
+				if params.event == "DeviceButton_left mouse button" and update and hideMSD() then
+					recentactive = false
+					percentactive = false
+					showOnline = false
+					rankingSkillset = 1
+					rankingPage = 1
+					bestactive = not bestactive
+					if bestactive then
+						buildBestList()
+					end
+					BroadcastIfActive("UpdateRanking")
+				end
+			end,
+			UpdateRankingMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			MouseOverCommand = function(self)
+				self:GetParent():GetChild("BestButtonTxt"):diffusealpha(0.7)
+			end,
+			MouseOutCommand = function(self)
+				self:GetParent():GetChild("BestButtonTxt"):diffusealpha(1)
+			end,
+		},
+		LoadFont("Common Large") .. {
+			Name = "BestButtonTxt",
+			InitCommand = function(self)
+				self:addy(-1):diffuse(getMainColor("positive")):maxwidth(rankingTitleSpacing * 2):zoom(0.42)
+			end,
+			BeginCommand = function(self)
+				self:settext(translated_info["Best"])
 			end
 		}
 	}
@@ -853,7 +1093,7 @@ r[#r + 1] = Def.ActorFrame {
 		self:xy(10, frameHeight - offsetY):visible(false)
 	end,
 	UpdateRankingMessageCommand = function(self)
-		if (rankingSkillset > 1 or recentactive ) and not showOnline then
+		if (rankingSkillset > 1 or recentactive or bestactive) and not showOnline then
 			self:visible(true)
 			if not self and self.GetChildren then
 				for child in self:GetChildren() do
@@ -941,6 +1181,10 @@ end
 
 r[#r + 1] = recentButton()
 r[#r + 1] = percentButton()
+r[#r + 1] = bestButton()
+for i = 1, scoresperpage do
+	r[#r + 1] = bestLabel(i)
+end
 
 local function littlebits(i)
 	local t = Def.ActorFrame {
@@ -948,7 +1192,7 @@ local function littlebits(i)
 			self:xy(frameX + capWideScale(28,45), frameY - 30)
 		end,
 		UpdateRankingMessageCommand = function(self)
-			if rankingSkillset == 1 and update and not recentactive then
+			if rankingSkillset == 1 and update and not recentactive and not bestactive and not hideMSD() then
 				self:visible(true)
 			else
 				self:visible(false)
@@ -1015,7 +1259,7 @@ local profilebuttons = Def.ActorFrame {
 		end
 	end,
 	UpdateRankingMessageCommand = function(self)
-		if rankingSkillset == 1 and update and not recentactive then
+		if rankingSkillset == 1 and update and not recentactive and not bestactive then
 			self:visible(true)
 		else
 			self:visible(false)
@@ -1033,7 +1277,7 @@ local profilebuttons = Def.ActorFrame {
 			self:diffusealpha(1)
 		end,
 		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive then
+			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive and not bestactive then
 				if PROFILEMAN:SaveProfile(PLAYER_1) then
 					ms.ok(translated_info["Success"])
 					STATSMAN:UpdatePlayerRating()
@@ -1055,7 +1299,7 @@ local profilebuttons = Def.ActorFrame {
 			self:diffusealpha(1)
 		end,
 		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive then
+			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive and not bestactive then
 				SCREENMAN:SetNewScreen("ScreenAssetSettings")
 			end
 		end,
@@ -1072,7 +1316,7 @@ local profilebuttons = Def.ActorFrame {
 			self:diffusealpha(1)
 		end,
 		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive then
+			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive and not bestactive then
 				profile:UnInvalidateAllScores()
 				STATSMAN:UpdatePlayerRating()
 			end
@@ -1090,7 +1334,7 @@ local profilebuttons = Def.ActorFrame {
 			self:diffusealpha(1)
 		end,
 		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive  then
+			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive and not bestactive  then
 				ms.ok("Recalculating Scores... this might be slow and may or may not crash")
 				profile:ForceRecalcScores()
 				STATSMAN:UpdatePlayerRating()
@@ -1109,7 +1353,7 @@ local profilebuttons = Def.ActorFrame {
 			self:diffusealpha(1)
 		end,
 		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive  then
+			if params.event == "DeviceButton_left mouse button" and update and rankingSkillset == 1 and not recentactive and not bestactive  then
 				if DLMAN:IsLoggedIn() then
 					DLMAN:UploadAllScores()
 				else

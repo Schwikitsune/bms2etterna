@@ -105,7 +105,7 @@ local function littlebits(i)
 			end,
 			SetCommand = function(self)
 				--skillset name
-				if song and steps then
+				if song and steps and not hideMSD() then
 					self:settext(ms.SkillSetsTranslated[i] .. ":")
 				else
 					self:settext("")
@@ -122,7 +122,7 @@ local function littlebits(i)
 				self:xy(frameX + 240, frameY + 100 + txtDist * i):halign(1):valign(0):zoom(0.55):maxwidth(110 / 0.55)
 			end,
 			SetCommand = function(self)
-				if song and steps then
+				if song and steps and not hideMSD() then
 					self:settextf("%05.2f", meter[i + 1])
 					self:diffuse(byMSD(meter[i + 1]))
 				else

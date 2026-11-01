@@ -9,8 +9,19 @@
 #include "Etterna/Actor/GameplayAndMenus/StreamDisplay.h"
 #include "Etterna/Singletons/ThemeManager.h"
 #include "Etterna/Models/Misc/ThemeMetric.h"
+#include "Etterna/Models/StepsAndStyles/Steps.h"
+#include "Etterna/Models/StepsAndStyles/Style.h"
+#include "Etterna/Singletons/CryptManager.h"
+#include "Etterna/Singletons/ScreenManager.h"
+#include "Core/Services/Locator.hpp"
+#include "RageUtil/File/RageFileManager.h"
+
+#include "rapidjson/document.h"
 
 #include <algorithm>
+#include <cctype>
+#include <limits>
+#include <unordered_map>
 
 static std::string
 LIFE_PERCENT_CHANGE_NAME(size_t i)
@@ -163,6 +174,14 @@ LifeMeterBar::Load(const PlayerState* pPlayerState,
 {
 	LifeMeter::Load(pPlayerState, pPlayerStageStats);
 
+	const auto* style = GAMESTATE->GetCurrentStyle(pPlayerState->m_PlayerNumber);
+	m_bBMS = style != nullptr && style->m_iColsPerPlayer == 7;
+	if (m_bBMS) {
+		LoadBMSGauge();
+		AfterLifeChanged();
+		return;
+	}
+
 	const auto dtype = pPlayerState->m_PlayerOptions.GetStage().m_DrainType;
 	switch (dtype) {
 		case DrainType_Normal:
@@ -180,9 +199,486 @@ LifeMeterBar::Load(const PlayerState* pPlayerState,
 	AfterLifeChanged();
 }
 
+// LR2 gauge tables, as lr2oraja Endless Dream has them (GaugeProperty.LR2).
+// Groove type gauges scale recovery by TOTAL, Hard scales damage up for low
+// TOTAL / short charts. A survival gauge that drops below its death value
+// is dead (0) and stays dead.
+struct BMSGaugeProperty
+{
+	bool survival;
+	float min, init, border, death;
+	float change[6]; // PG GR GD BD PR MS(empty POOR)
+	float gutsBelow, gutsScale; // damage scale while the gauge is below
+};
+static const BMSGaugeProperty BMS_GAUGES[NUM_BMSGauge] = {
+	{ false, 2.f, 20.f, 80.f, 0.f,
+	  { 1.2f, 1.2f, .6f, -3.2f, -4.8f, -1.6f }, 0.f, 1.f },
+	{ false, 2.f, 20.f, 80.f, 0.f,
+	  { 1.f, 1.f, .5f, -4.f, -6.f, -2.f }, 0.f, 1.f },
+	{ true, 0.f, 100.f, 0.f, 2.f,
+	  { .1f, .1f, .05f, -6.f, -10.f, -2.f }, 32.f, .6f },
+	{ true, 0.f, 100.f, 0.f, 2.f,
+	  { .15f, .06f, 0.f, -100.f, -100.f, -10.f }, 0.f, 1.f },
+};
+
+// LR2 hard gauge damage multiplier from TOTAL and note count (Endless
+// Dream's GaugeModifier.MODIFY_DAMAGE)
+static float
+LR2DamageScale(float total, float notes)
+{
+	const auto fix1 = static_cast<float>(
+	  10.0 /
+	  std::min(10.0, std::max(1.0, std::floor(total / 16.0) - 5.0)));
+	float fix2;
+	if (notes <= 20.f)
+		fix2 = 10.f;
+	else if (notes < 30.f)
+		fix2 = 8.f + .2f * (30.f - notes);
+	else if (notes < 60.f)
+		fix2 = 5.f + .2f * (60.f - notes) / 3.f;
+	else if (notes < 125.f)
+		fix2 = 4.f + (125.f - notes) / 65.f;
+	else if (notes < 250.f)
+		fix2 = 3.f + .008f * (250.f - notes);
+	else if (notes < 500.f)
+		fix2 = 2.f + .004f * (500.f - notes);
+	else if (notes < 1000.f)
+		fix2 = 1.f + .002f * (1000.f - notes);
+	else
+		fix2 = 1.f;
+	return std::max(fix1, fix2);
+}
+
+// Lookup of BMS #TOTAL values. Every json in Songs/total/ (insane_total.json
+// from the table script, bms_total.json from tools/bms_total) maps the md5 of
+// a raw .bms file to its TOTAL, title and original file name. Bms files put
+// in that folder count too. Converted charts (.sm/.ssc) have no source file
+// to hash, so they are matched by file name (BMS2SM keeps the bms name), then
+// by title + subtitle, using the note count when a title is ambiguous.
+namespace {
+struct BMSTotalEntry
+{
+	float total{ 0.f };
+	bool fromBMS{ false }; // read from a bms file, not a table comment
+	int notes{ 0 };		   // bms note count, scratch included
+	std::string stem;	   // original file name, lower case, no extension
+	std::vector<std::string> titles;
+};
+
+struct BMSTotalTable
+{
+	std::unordered_map<std::string, BMSTotalEntry> byHash; // md5, hex
+	std::unordered_map<std::string, std::string> sha256;   // sha256 -> md5
+	std::unordered_map<std::string, std::vector<const BMSTotalEntry*>> byStem;
+	std::unordered_map<std::string, std::vector<const BMSTotalEntry*>>
+	  byTitle; // normalized title
+	bool loaded{ false };
+};
+
+// lower case ascii alphanumerics, keep all non-ascii bytes as they are
+std::string
+NormalizeBMSTitle(const std::string& s)
+{
+	std::string out;
+	for (const auto c : s) {
+		const auto u = static_cast<unsigned char>(c);
+		if (u >= 0x80)
+			out += c;
+		else if (std::isalnum(u))
+			out += static_cast<char>(std::tolower(u));
+	}
+	return out;
+}
+
+// file name without directories (either slash) and extension, lower case
+std::string
+FileStem(const std::string& path)
+{
+	auto name = path.substr(path.find_last_of("/\\") + 1);
+	const auto dot = name.find_last_of('.');
+	if (dot != std::string::npos)
+		name.erase(dot);
+	return make_lower(name);
+}
+
+// #TOTAL straight from a bms header
+float
+ReadBMSHeaderTotal(const std::string& path)
+{
+	std::vector<std::string> lines;
+	if (!GetFileContents(path, lines))
+		return 0.f;
+	for (const auto& line : lines) {
+		if (line.size() > 7 && line[0] == '#' &&
+			make_upper(line.substr(1, 5)) == "TOTAL" &&
+			std::isspace(static_cast<unsigned char>(line[6])))
+			return StringToFloat(line.substr(7));
+	}
+	return 0.f;
+}
+
+// merge what one source knows about a chart; bms values beat table comments
+void
+AddBMSTotal(BMSTotalTable& table,
+			const std::string& md5,
+			float total,
+			bool fromBMS,
+			int notes,
+			const std::string& file,
+			const std::string& title)
+{
+	auto& e = table.byHash[md5];
+	if (total > 0.f && (e.total <= 0.f || (fromBMS && !e.fromBMS))) {
+		e.total = total;
+		e.fromBMS = fromBMS;
+	}
+	if (e.notes <= 0)
+		e.notes = notes;
+	if (e.stem.empty() && !file.empty())
+		e.stem = FileStem(file);
+	const auto key = NormalizeBMSTitle(title);
+	if (!key.empty() &&
+		std::find(e.titles.begin(), e.titles.end(), key) == e.titles.end())
+		e.titles.push_back(key);
+}
+
+BMSTotalTable&
+GetBMSTotalTable()
+{
+	static BMSTotalTable table;
+	if (table.loaded)
+		return table;
+	table.loaded = true;
+
+	auto str = [](const rapidjson::Value& c, const char* key) {
+		return c.HasMember(key) && c[key].IsString()
+				 ? std::string(c[key].GetString())
+				 : std::string();
+	};
+
+	for (const std::string dir : { "/Songs/total/", "/AdditionalSongs/total/" }) {
+		std::vector<std::string> files;
+		FILEMAN->GetDirListingWithMultipleExtensions(
+		  dir, { "json" }, files, ONLY_FILE, true);
+		for (const auto& path : files) {
+			std::string json;
+			if (!GetFileContents(path, json)) {
+				Locator::getLogger()->warn("BMS TOTAL: could not read {}",
+										   path);
+				continue;
+			}
+			if (json.rfind("\xEF\xBB\xBF", 0) == 0)
+				json.erase(0, 3);
+			rapidjson::Document doc;
+			doc.Parse(json.c_str(), json.size());
+			if (doc.HasParseError() || !doc.IsObject() ||
+				!doc.HasMember("charts") || !doc["charts"].IsObject()) {
+				Locator::getLogger()->warn("BMS TOTAL: {} is not valid", path);
+				continue;
+			}
+			auto withTotal = 0;
+			for (auto& it : doc["charts"].GetObject()) {
+				const auto& c = it.value;
+				if (!c.IsObject())
+					continue;
+				const auto source = str(c, "total_source");
+				auto total = 0.f;
+				// bmson TOTAL is a percentage, not the bms value
+				if (c.HasMember("total") && c["total"].IsNumber() &&
+					source != "bmson_percent")
+					total = c["total"].GetFloat();
+				if (total > 0.f)
+					withTotal++;
+				const auto notes = c.HasMember("notes") && c["notes"].IsInt()
+									 ? c["notes"].GetInt()
+									 : 0;
+				const auto md5 = make_lower(it.name.GetString());
+				AddBMSTotal(table, md5, total, source == "bms", notes,
+							str(c, "file"),
+							str(c, "title") + str(c, "subtitle"));
+				if (!str(c, "subtitle").empty())
+					AddBMSTotal(
+					  table, md5, 0.f, false, 0, "", str(c, "title"));
+				if (!str(c, "sha256").empty())
+					table.sha256[make_lower(str(c, "sha256"))] = md5;
+			}
+			Locator::getLogger()->info(
+			  "BMS TOTAL: loaded {} ({} charts, {} with TOTAL)", path,
+			  doc["charts"].MemberCount(), withTotal);
+		}
+
+		// bms files put in the folder: their own #TOTAL and name
+		files.clear();
+		FILEMAN->GetDirListingWithMultipleExtensions(
+		  dir, { "bms", "bme", "bml", "pms" }, files, ONLY_FILE, true);
+		for (const auto& file : files) {
+			const auto total = ReadBMSHeaderTotal(file);
+			const auto md5 =
+			  make_lower(BinaryToHex(CryptManager::GetMD5ForFile(file)));
+			AddBMSTotal(table, md5, total, true, 0, file, "");
+			Locator::getLogger()->info("BMS TOTAL: {} has #TOTAL {}", file,
+									   total);
+		}
+	}
+
+	for (const auto& [md5, e] : table.byHash) {
+		if (e.total <= 0.f)
+			continue;
+		if (!e.stem.empty())
+			table.byStem[e.stem].push_back(&e);
+		for (const auto& t : e.titles)
+			table.byTitle[t].push_back(&e);
+	}
+	return table;
+}
+
+// One TOTAL out of the charts sharing a name. When they disagree, pick the
+// one whose note count fits ours best: converts lose the scratch lane, so a
+// bms chart can't have fewer notes than our chart.
+const BMSTotalEntry*
+PickBMSTotal(const std::vector<const BMSTotalEntry*>& candidates, int notes)
+{
+	if (candidates.empty())
+		return nullptr;
+	const auto* best = candidates.front();
+	auto same = true;
+	for (const auto* c : candidates)
+		same = same && c->total == best->total;
+	if (same)
+		return best;
+	auto bestScore = std::numeric_limits<int>::max();
+	for (const auto* c : candidates) {
+		if (c->notes <= 0)
+			continue;
+		const auto score =
+		  std::abs(c->notes - notes) + (c->notes < notes ? 100000 : 0);
+		if (score < bestScore) {
+			bestScore = score;
+			best = c;
+		}
+	}
+	return best;
+}
+} // namespace
+
+float
+LifeMeterBar::FindBMSTotal(const Song* song,
+						   const Steps* steps,
+						   std::string& source)
+{
+	auto& table = GetBMSTotalTable();
+	const auto notes =
+	  steps != nullptr
+		? static_cast<int>(steps->GetRadarValues()[RadarCategory_Notes])
+		: 0;
+
+	if (steps != nullptr) {
+		const auto& fn = steps->GetFilename();
+		const auto ext = make_lower(GetExtension(fn));
+		// charts loaded from a bms file: header first, then md5 of the file
+		if (ext == "bms" || ext == "bme" || ext == "bml" || ext == "pms") {
+			const auto total = ReadBMSHeaderTotal(fn);
+			if (total > 0.f) {
+				source = "#TOTAL";
+				return total;
+			}
+			static std::unordered_map<std::string, std::string> md5Cache;
+			auto cached = md5Cache.find(fn);
+			if (cached == md5Cache.end())
+				cached =
+				  md5Cache
+					.emplace(fn,
+							 make_lower(BinaryToHex(
+							   CryptManager::GetMD5ForFile(fn))))
+					.first;
+			const auto hit = table.byHash.find(cached->second);
+			if (hit != table.byHash.end() && hit->second.total > 0.f) {
+				source = "json md5";
+				return hit->second.total;
+			}
+		}
+	}
+
+	if (song != nullptr) {
+		// converts are named after the bms file they came from, both the
+		// .sm and its folder
+		auto dir = song->GetSongDir();
+		while (!dir.empty() && dir.back() == '/')
+			dir.pop_back();
+		for (const auto& name :
+			 { steps != nullptr ? FileStem(steps->GetFilename()) : std::string(),
+			   make_lower(dir.substr(dir.find_last_of('/') + 1)) }) {
+			if (name.empty())
+				continue;
+			const auto hit = table.byStem.find(name);
+			if (hit != table.byStem.end()) {
+				source = "json file";
+				return PickBMSTotal(hit->second, notes)->total;
+			}
+		}
+		for (const auto& title :
+			 { song->m_sMainTitle + song->m_sSubTitle, song->m_sMainTitle }) {
+			const auto hit = table.byTitle.find(NormalizeBMSTitle(title));
+			if (hit != table.byTitle.end()) {
+				source = "json title";
+				return PickBMSTotal(hit->second, notes)->total;
+			}
+		}
+	}
+	return 0.f;
+}
+
+// The chart's TOTAL when we know it (BMS header or Songs/total json).
+// Otherwise do what LR2 does for BMS without #TOTAL (and lr2oraja Endless
+// Dream for osu charts): 160 + (n + clamp(n-400,0,200))*0.16, n counting a
+// long note once
+float
+LifeMeterBar::GetBMSTotal(const Song* song,
+						  const Steps* steps,
+						  std::string& source)
+{
+	const auto total = FindBMSTotal(song, steps, source);
+	if (total > 0.f)
+		return total;
+	auto notes = 0.f;
+	if (steps != nullptr)
+		notes = steps->GetRadarValues()[RadarCategory_Notes];
+	notes = std::max(notes, 1.f);
+	source = "default";
+	return 160.f + (notes + std::clamp(notes - 400.f, 0.f, 200.f)) * 0.16f;
+}
+
+void
+LifeMeterBar::LoadBMSGauge()
+{
+	const auto& po = m_pPlayerState->m_PlayerOptions.GetStage();
+	m_BMSGauge = po.m_BMSGauge;
+	if (m_BMSGauge < 0 || m_BMSGauge >= NUM_BMSGauge)
+		m_BMSGauge = BMSGauge_Normal;
+	m_bBMSAutoShift = po.m_bBMSAutoShift;
+
+	auto notes = 0.f;
+	if (GAMESTATE->m_pCurSteps != nullptr)
+		notes = GAMESTATE->m_pCurSteps->GetRadarValues()[RadarCategory_Notes];
+	notes = std::max(notes, 1.f);
+
+	std::string source;
+	const auto total =
+	  GetBMSTotal(GAMESTATE->m_pCurSong, GAMESTATE->m_pCurSteps, source);
+	Locator::getLogger()->info("BMS gauge: TOTAL {:.1f} ({}), {} notes",
+							   total, source, static_cast<int>(notes));
+	if (SCREENMAN != nullptr)
+		SCREENMAN->SystemMessage(
+		  fmt::format("TOTAL {:.1f} ({})", total, source));
+
+	// with auto shift every gauge below the chosen one runs alongside it
+	for (auto g = 0; g < NUM_BMSGauge; g++) {
+		m_bBMSTracked[g] =
+		  g == m_BMSGauge || (m_bBMSAutoShift && g < m_BMSGauge);
+		const auto& prop = BMS_GAUGES[g];
+		const auto damageScale =
+		  g == BMSGauge_Hard ? LR2DamageScale(total, notes) : 1.f;
+		for (auto i = 0; i < NUM_BMSJudge; i++) {
+			auto f = prop.change[i];
+			if (f > 0 && !prop.survival)
+				f *= total / notes;
+			else if (f < 0)
+				f *= damageScale;
+			m_fBMSChange[g][i] = f;
+		}
+		m_fBMSValue[g] = prop.init;
+	}
+	SetBMSCurrentGauge(m_BMSGauge);
+}
+
+void
+LifeMeterBar::SetBMSCurrentGauge(BMSGauge gauge)
+{
+	m_BMSGauge = gauge;
+	m_fBMSMin = BMS_GAUGES[gauge].min;
+	m_fBMSBorder = BMS_GAUGES[gauge].border;
+	m_fLifePercentage = m_fBMSValue[gauge] / 100.f;
+}
+
+// With auto shift the shown gauge is the strongest tracked one that is
+// qualified (alive, and at or above its border), else the bottom gauge,
+// like Endless Dream's "select to under" auto shift
+BMSGauge
+LifeMeterBar::PickBMSAutoShiftGauge() const
+{
+	auto picked = BMSGauge_Easy;
+	for (auto g = 0; g < NUM_BMSGauge; g++) {
+		if (m_bBMSTracked[g] && m_fBMSValue[g] > 0.f &&
+			m_fBMSValue[g] >= BMS_GAUGES[g].border)
+			picked = static_cast<BMSGauge>(g);
+	}
+	return picked;
+}
+
+void
+LifeMeterBar::ChangeBMSLife(BMSJudge judge)
+{
+	if (m_pPlayerStageStats->m_bFailed)
+		return;
+	for (auto g = 0; g < NUM_BMSGauge; g++) {
+		auto& value = m_fBMSValue[g];
+		// hard gauges stay dead once they hit 0
+		if (!m_bBMSTracked[g] || value <= 0.f)
+			continue;
+		const auto& prop = BMS_GAUGES[g];
+		auto inc = m_fBMSChange[g][judge];
+		// hard gauge takes less damage below 32%
+		if (inc < 0 && value < prop.gutsBelow)
+			inc *= prop.gutsScale;
+		value = std::clamp(value + inc, prop.min, 100.f);
+		if (value < prop.death)
+			value = 0.f;
+	}
+
+	const auto InitialLife = m_fLifePercentage;
+	const auto InitialGauge = m_BMSGauge;
+	SetBMSCurrentGauge(m_bBMSAutoShift ? PickBMSAutoShiftGauge() : m_BMSGauge);
+	if (InitialGauge != m_BMSGauge) {
+		Message msg("BMSGaugeShift");
+		msg.SetParam("Player", m_pPlayerState->m_PlayerNumber);
+		msg.SetParam("Gauge", BMSGaugeToString(m_BMSGauge));
+		MESSAGEMAN->Broadcast(msg);
+	}
+	if (InitialLife != m_fLifePercentage || InitialGauge != m_BMSGauge)
+		AfterLifeChanged();
+}
+
 void
 LifeMeterBar::ChangeLife(TapNoteScore score)
 {
+	if (m_bBMS) {
+		switch (score) {
+			case TNS_W1:
+				ChangeBMSLife(BMS_PG);
+				break;
+			case TNS_W2:
+				ChangeBMSLife(BMS_GR);
+				break;
+			case TNS_W3:
+				ChangeBMSLife(BMS_GD);
+				break;
+			case TNS_W4:
+			case TNS_W5:
+				ChangeBMSLife(BMS_BD);
+				break;
+			case TNS_Miss:
+				ChangeBMSLife(BMS_PR);
+				break;
+			case TNS_None:
+			case TNS_HitMine:
+				ChangeBMSLife(BMS_MS);
+				break;
+			default:
+				break;
+		}
+		return;
+	}
+
 	auto fDeltaLife = 0.f;
 	switch (score) {
 		DEFAULT_FAIL(score);
@@ -247,6 +743,13 @@ LifeMeterBar::ChangeLife(TapNoteScore score)
 void
 LifeMeterBar::ChangeLife(HoldNoteScore score, TapNoteScore tscore)
 {
+	if (m_bBMS) {
+		// a dropped long note is a POOR, the head was judged already
+		if (score == HNS_LetGo)
+			ChangeBMSLife(BMS_PR);
+		return;
+	}
+
 	auto fDeltaLife = 0.f;
 	const auto dtype = m_pPlayerState->m_PlayerOptions.GetSong().m_DrainType;
 	switch (dtype) {
@@ -309,6 +812,20 @@ LifeMeterBar::ChangeLife(float fDeltaLife)
 	// again.
 	if (m_pPlayerStageStats->m_bFailed)
 		return;
+
+	if (m_bBMS) {
+		if (m_fLifePercentage <= 0.f)
+			return;
+		const auto InitialLife = m_fLifePercentage;
+		m_fLifePercentage =
+		  std::clamp(m_fLifePercentage + fDeltaLife, m_fBMSMin / 100.f, 1.f);
+		if (m_fLifePercentage * 100.f < BMS_GAUGES[m_BMSGauge].death)
+			m_fLifePercentage = 0.f;
+		m_fBMSValue[m_BMSGauge] = m_fLifePercentage * 100.f;
+		if (InitialLife != m_fLifePercentage)
+			AfterLifeChanged();
+		return;
+	}
 
 	switch (m_pPlayerState->m_PlayerOptions.GetSong().m_DrainType) {
 		case DrainType_Normal:
@@ -373,20 +890,37 @@ LifeMeterBar::AfterLifeChanged()
 bool
 LifeMeterBar::IsHot() const
 {
+	if (m_bBMS)
+		return m_fLifePercentage >= 1.f;
 	return m_fLifePercentage >= HOT_VALUE;
 }
 
 bool
 LifeMeterBar::IsInDanger() const
 {
+	if (m_bBMS)
+		return m_fBMSBorder > 0.f ? m_fLifePercentage < m_fBMSBorder / 100.f
+								  : m_fLifePercentage < .3f;
 	return m_fLifePercentage < DANGER_THRESHOLD;
 }
 
 bool
 LifeMeterBar::IsFailing() const
 {
+	// groove type gauges never fail during the song, only at the end
+	if (m_bBMS)
+		return m_fBMSBorder <= 0.f && m_fLifePercentage <= 0.f;
 	return m_fLifePercentage <=
 		   m_pPlayerState->m_PlayerOptions.GetCurrent().m_fPassmark;
+}
+
+bool
+LifeMeterBar::IsFailingAtEnd() const
+{
+	if (m_bBMS)
+		return m_fLifePercentage <= 0.f ||
+			   m_fLifePercentage * 100.f < m_fBMSBorder - 0.001f;
+	return IsFailing();
 }
 
 void

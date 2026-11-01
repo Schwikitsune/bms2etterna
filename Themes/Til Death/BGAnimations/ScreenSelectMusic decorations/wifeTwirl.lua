@@ -445,7 +445,7 @@ t[#t + 1] = Def.ActorFrame {
 			self:xy(frameX + 58, frameY - 62):halign(0.5):zoom(0.6):maxwidth(110 / 0.6)
 		end,
 		MintyFreshCommand = function(self)
-			if song then
+			if song and not hideMSD() then
 				local stype = steps:GetStepsType()
 				local meter = steps:GetMSD(getCurRateValue(), 1)
 				self:settextf("%05.2f", meter)
@@ -506,6 +506,33 @@ t[#t + 1] = Def.ActorFrame {
 				local ss = steps:GetRelevantSkillsetsByMSDRank(getCurRateValue(), 3)
 				local out = ss == "" and "" or ms.SkillSetsTranslatedByName[ss]
 				self:settext(out)
+			else
+				self:settext("")
+			end
+		end,
+		ChartPreviewOnMessageCommand = function(self)
+			self:visible(false)
+		end,
+		ChartPreviewOffMessageCommand = function(self)
+			self:visible(true)
+		end
+	},
+	-- BMS gauge TOTAL on 7k charts, where the skillsets go for 4k
+	-- white: from the chart or Songs/total json, grey: LR2 default formula
+	LoadFont("Common Normal") .. {
+		Name = "BMSTotal",
+		InitCommand = function(self)
+			self:xy(frameX + 120, frameY - 60):halign(0):zoom(0.6, maxwidth, 125)
+		end,
+		MintyFreshCommand = function(self)
+			if song and steps and steps:GetStepsType() == "StepsType_Kb7_Single" then
+				local total, source = steps:GetBMSTotal()
+				self:settextf("TOTAL %g", math.floor(total * 10 + 0.5) / 10)
+				if source == "default" then
+					self:diffuse(color("0.6,0.6,0.6,1"))
+				else
+					self:diffuse(color("1,1,1,1"))
+				end
 			else
 				self:settext("")
 			end
@@ -587,6 +614,9 @@ t[#t + 1] = Def.ActorFrame {
 			if song and score then
 				local wv = score:GetWifeVers()
 				local ws = " W" .. wv
+				if hideMSD() then
+					ws = " " .. getBMSJudgeRankFromScore(score)
+				end
 				self:settext(ws):diffuse(byGrade(score:GetWifeGrade()))
 			else
 				self:settext("")
@@ -1157,6 +1187,11 @@ local function ihatestickinginputcallbackseverywhere(event)
 		local CtrlPressed = INPUTFILTER:IsControlPressed()
 		if CtrlPressed and event.DeviceInput.button == "DeviceButton_l" then
 			MESSAGEMAN:Broadcast("LoginHotkeyPressed")
+		end
+		-- Ctrl+R toggles BMS Random on 7k (Ctrl+Shift+R still reloads the song)
+		local ShiftPressed = INPUTFILTER:IsBeingPressed("left shift") or INPUTFILTER:IsBeingPressed("right shift")
+		if CtrlPressed and not ShiftPressed and event.DeviceInput.button == "DeviceButton_r" and hideMSD() then
+			toggleBMSRandom()
 		end
 		if event.GameButton == "EffectUp" then
 			lastratepresses[1] = GetTimeSinceStart()

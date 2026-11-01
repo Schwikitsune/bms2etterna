@@ -2,6 +2,23 @@ local lastclick = GetTimeSinceStart()
 local requiredtimegap = 0.1
 
 return Def.ActorFrame {
+    -- 7k songs: background behind the title in the color of the best gauge cleared
+    Def.Quad {
+        InitCommand = function(self)
+            self:halign(0):xy(0, -2):zoomto(854, 34)
+            self:diffusealpha(0)
+        end,
+        SetCommand = function(self, params)
+            local lamp = params.Song and getBestBMSLampForSong(params.Song)
+            if lamp then
+                local c = getBMSLampInfo(lamp, 2)
+                self:diffuseleftedge({c[1], c[2], c[3], 0.45})
+                self:diffuserightedge({c[1], c[2], c[3], 0.08})
+            else
+                self:diffusealpha(0)
+            end
+        end,
+    },
     UIElements.QuadButton(1, 1) .. {
 		InitCommand = function(self)
 			self:halign(0)

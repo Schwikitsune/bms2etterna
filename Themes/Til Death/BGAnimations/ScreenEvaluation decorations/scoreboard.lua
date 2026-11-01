@@ -235,6 +235,9 @@ local function scoreitem(pn, index, scoreIndex, drawindex)
 				if usingSSRSort then
 					wstring = "Wife" .. wv .. " J4"
 				end
+				if hideMSD() then
+					wstring = getBMSJudgeRankLabel(hsTable[index])
+				end
 				if hsTable[index]:GetWifeScore() == 0 then
 					self:settextf("NA (%s)", wstring)
 				else

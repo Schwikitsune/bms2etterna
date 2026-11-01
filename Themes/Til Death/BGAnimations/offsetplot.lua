@@ -13,6 +13,15 @@ local baralpha = 0.2
 local bgalpha = 0.8
 local textzoom = 0.35
 local forcedWindow = false
+-- 7k plots on the LR2 windows of the score's judge rank, which can't be switched
+local is7k = hideMSD()
+local bmsWindows = getBMSWindowsMs(1)
+local bmsRankName = ""
+local function setBMSScore(score)
+	if not is7k then return end
+	bmsWindows = getBMSWindowsMs(getBMSJudgeRankIndexFromScore(score))
+	bmsRankName = getBMSJudgeRankFromScore(score)
+end
 
 local translated_info = {
 	Left = THEME:GetString("OffsetPlot", "ExplainLeft"),
@@ -119,6 +128,7 @@ local o = Def.ActorFrame {
 				self:SetUpdateFunction(HighlightUpdaterThing)
 			end
 			local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats()
+			setBMSScore(SCREENMAN:GetTopScreen():GetHighScore())
 			dvt = pss:GetOffsetVector()
 			nrt = pss:GetNoteRowVector()
 			ctt = pss:GetTrackVector() -- column information for each offset
@@ -126,6 +136,7 @@ local o = Def.ActorFrame {
 		else -- should be default behavior
 			if name == "ScreenScoreTabOffsetPlot" then
 				local score = getScoreForPlot()
+				setBMSScore(score)
 				plotWidth, plotHeight = SCREEN_WIDTH, SCREEN_WIDTH * 0.3
 				self:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y)
 				textzoom = 0.5
@@ -141,6 +152,7 @@ local o = Def.ActorFrame {
 					end
 				end
 			else
+				setBMSScore(SCOREMAN:GetMostRecentScore() or SCOREMAN:GetTempReplayScore())
 				local allowHovering = not SCREENMAN:GetTopScreen():ScoreUsedInvalidModifier()
 				if allowHovering then
 					self:SetUpdateFunction(HighlightUpdaterThing)
@@ -173,6 +185,7 @@ local o = Def.ActorFrame {
 	SetFromScoreCommand = function(self, params)
 		if params.score then
 			local score = params.score
+			setBMSScore(score)
 
 			if score:HasReplayData() then
 				local replay = score:GetReplay()
@@ -219,6 +232,7 @@ local o = Def.ActorFrame {
 	end,
 	CodeMessageCommand = function(self, params)
 		if usingCustomWindows then return end
+		if is7k and params.Name ~= "ToggleHands" then return end
 
 		if params.Name == "PrevJudge" and judge > 1 then
 			judge = judge - 1
@@ -258,6 +272,7 @@ local o = Def.ActorFrame {
 		MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 	end,
 	ForceWindowMessageCommand = function(self, params)
+		if is7k then return end
 		judge = params.judge
 		clampJudge()
 		tso = tst[judge]
@@ -376,7 +391,7 @@ for i = 1, #fantabars do
 	o[#o + 1] = Def.Quad {
 		JudgeDisplayChangedMessageCommand = function(self)
 			self:zoomto(plotWidth + plotMargin, 1):diffuse(byJudgment(bantafars[i])):diffusealpha(baralpha)
-			local fit = tso * fantabars[i]
+			local fit = is7k and bmsWindows[i] or tso * fantabars[i]
 			if usingCustomWindows then
 				fit = getCustomWindowConfigJudgmentWindow(santabarf[i])
 			end
@@ -388,7 +403,7 @@ for i = 1, #fantabars do
 	o[#o + 1] = Def.Quad {
 		JudgeDisplayChangedMessageCommand = function(self)
 			self:zoomto(plotWidth + plotMargin, 1):diffuse(byJudgment(bantafars[i])):diffusealpha(baralpha)
-			local fit = tso * fantabars[i]
+			local fit = is7k and bmsWindows[i] or tso * fantabars[i]
 			if usingCustomWindows then
 				fit = getCustomWindowConfigJudgmentWindow(santabarf[i])
 			end
@@ -428,6 +443,9 @@ o[#o + 1] = Def.ActorMultiVertex {
 
 			-- get the color for the tap
 			local cullur = offsetToJudgeColor(dvt[i], tst[judge])
+			if is7k then
+				cullur = bmsOffsetToJudgeColor(dvt[i], bmsWindows)
+			end
 			if usingCustomWindows then
 				cullur = customOffsetToJudgeColor(dvt[i], getCurrentCustomWindowConfigJudgmentWindowTable())
 			end
@@ -553,6 +571,9 @@ o[#o + 1] = LoadFont("Common Normal") .. {
 	end,
 	SetCommand = function(self)
 		local jdgname = "J" .. judge
+		if is7k then
+			jdgname = bmsRankName
+		end
 		self:settextf("%s", jdgname)
 	end,
 	JudgeDisplayChangedMessageCommand = function(self)

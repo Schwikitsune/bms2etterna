@@ -6,6 +6,8 @@
 #include "Etterna/Models/Misc/ThemeMetric.h"
 
 class StreamDisplay;
+class Song;
+class Steps;
 
 /** @brief The player's life represented as a bar. */
 class LifeMeterBar : public LifeMeter
@@ -28,13 +30,51 @@ class LifeMeterBar : public LifeMeter
 	bool IsInDanger() const override;
 	bool IsHot() const override;
 	bool IsFailing() const override;
+	bool IsFailingAtEnd() const override;
+	bool IsBMSGauge() const override { return m_bBMS; }
+	int GetBMSGauge() const override { return m_bBMS ? m_BMSGauge : -1; }
 	float GetLife() const override { return m_fLifePercentage; }
 
 	void FillForHowToPlay(int NumT2s, int NumMisses);
 	static float MapTNSToDeltaLife(TapNoteScore s);
 	static float MapHNSToDeltaLife(HoldNoteScore score);
+	/** @brief BMS TOTAL of a chart and where it came from ("#TOTAL",
+	 * "json md5", "json title" or "default") */
+	static float GetBMSTotal(const Song* song,
+							 const Steps* steps,
+							 std::string& source);
 
   private:
+	// BMS (beatoraja) gauge, used instead of the normal bar on 7k charts.
+	// Values are in gauge percent (0-100), in the order PG GR GD BD PR MS.
+	enum BMSJudge
+	{
+		BMS_PG,
+		BMS_GR,
+		BMS_GD,
+		BMS_BD,
+		BMS_PR,
+		BMS_MS,
+		NUM_BMSJudge
+	};
+	void LoadBMSGauge();
+	static float FindBMSTotal(const Song* song,
+							  const Steps* steps,
+							  std::string& source);
+	void ChangeBMSLife(BMSJudge judge);
+	void SetBMSCurrentGauge(BMSGauge gauge);
+	BMSGauge PickBMSAutoShiftGauge() const;
+	bool m_bBMS{ false };
+	bool m_bBMSAutoShift{ false };
+	// the gauge shown and judged on, with auto shift it moves down
+	BMSGauge m_BMSGauge{ BMSGauge_Normal };
+	// every gauge runs when auto shift tracks it, values in gauge percent
+	bool m_bBMSTracked[NUM_BMSGauge]{};
+	float m_fBMSValue[NUM_BMSGauge]{};
+	float m_fBMSChange[NUM_BMSGauge][NUM_BMSJudge]{};
+	float m_fBMSMin{ 0.f };
+	float m_fBMSBorder{ 0.f };
+
 	ThemeMetric<float> DANGER_THRESHOLD;
 	ThemeMetric<float> INITIAL_VALUE;
 	ThemeMetric<float> HOT_VALUE;

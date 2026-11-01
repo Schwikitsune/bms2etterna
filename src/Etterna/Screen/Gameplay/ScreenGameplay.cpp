@@ -1016,8 +1016,13 @@ ScreenGameplay::Update(float fDeltaTime)
 
 	m_AutoKeysounds.Update(fDeltaTime);
 
-	const auto failtype =
+	auto failtype =
 	  GAMESTATE->GetPlayerFailType(GetPlayerInfo()->GetPlayerState());
+	// BMS gauges always decide the clear, fail off only means keep playing
+	if (failtype == FailType_Off && GetPlayerInfo()->m_pLifeMeter != nullptr &&
+		GetPlayerInfo()->m_pLifeMeter->IsBMSGauge()) {
+		failtype = FailType_ImmediateContinue;
+	}
 	// update GameState HealthState
 	auto& hs = GetPlayerInfo()->GetPlayerState()->m_HealthState;
 	const auto OldHealthState = hs;
@@ -1718,10 +1723,12 @@ ScreenGameplay::HandleScreenMessage(const ScreenMessage& SM)
 		  false); // don't allow giveup while the next song is loading
 
 		// Mark failure.
-		if (GAMESTATE->GetPlayerFailType(GetPlayerInfo()->GetPlayerState()) !=
-			  FailType_Off &&
-			((GetPlayerInfo()->m_pLifeMeter != nullptr) &&
-			 GetPlayerInfo()->m_pLifeMeter->IsFailing())) {
+		const auto* lifeMeter = GetPlayerInfo()->m_pLifeMeter;
+		if (lifeMeter != nullptr &&
+			(GAMESTATE->GetPlayerFailType(GetPlayerInfo()->GetPlayerState()) !=
+			   FailType_Off ||
+			 lifeMeter->IsBMSGauge()) &&
+			lifeMeter->IsFailingAtEnd()) {
 			GetPlayerInfo()->GetPlayerStageStats()->m_bFailed = true;
 			Message msg("SongFinished");
 			MESSAGEMAN->Broadcast(msg);
@@ -1729,6 +1736,9 @@ ScreenGameplay::HandleScreenMessage(const ScreenMessage& SM)
 
 		if (!GetPlayerInfo()->GetPlayerStageStats()->m_bFailed) {
 			GetPlayerInfo()->GetPlayerStageStats()->m_iSongsPassed++;
+			if (lifeMeter != nullptr)
+				GetPlayerInfo()->GetPlayerStageStats()->m_iBMSClearGauge =
+				  lifeMeter->GetBMSGauge();
 		}
 
 		// set a life record at the point of failure

@@ -67,38 +67,44 @@ ms.SkillSets = {
 	"Technical"
 }
 
-ms.SkillSetsTranslatedByName = {
-	Overall = THEME:GetString("Skillsets", "Overall"),
-	Stream = THEME:GetString("Skillsets", "Stream"),
-	Jumpstream = THEME:GetString("Skillsets", "Jumpstream"),
-	Handstream = THEME:GetString("Skillsets", "Handstream"),
-	Stamina = THEME:GetString("Skillsets", "Stamina"),
-	JackSpeed = THEME:GetString("Skillsets", "JackSpeed"),
-	Chordjack = THEME:GetString("Skillsets", "Chordjack"),
-	Technical = THEME:GetString("Skillsets", "Technical"),
+-- 7k shares the 8 skillset slots but names three of them differently
+-- (the calc rates them as delay, chordstream and brackets there)
+local skillSetNames7k = {
+	Stream = "Delay",
+	Jumpstream = "Chordstream",
+	Handstream = "Bracket",
 }
 
-ms.SkillSetsTranslated = {
-	THEME:GetString("Skillsets", "Overall"),
-	THEME:GetString("Skillsets", "Stream"),
-	THEME:GetString("Skillsets", "Jumpstream"),
-	THEME:GetString("Skillsets", "Handstream"),
-	THEME:GetString("Skillsets", "Stamina"),
-	THEME:GetString("Skillsets", "JackSpeed"),
-	THEME:GetString("Skillsets", "Chordjack"),
-	THEME:GetString("Skillsets", "Technical"),
-}
+local function skillSetKeycount()
+	local style = GAMESTATE:GetCurrentStyle()
+	return style and style:ColumnsPerPlayer() or 4
+end
 
-ms.SkillSetsShortTranslated = {
-	THEME:GetString("Skillsets", "OverallShort"),
-	THEME:GetString("Skillsets", "StreamShort"),
-	THEME:GetString("Skillsets", "JumpstreamShort"),
-	THEME:GetString("Skillsets", "HandstreamShort"),
-	THEME:GetString("Skillsets", "StaminaShort"),
-	THEME:GetString("Skillsets", "JackSpeedShort"),
-	THEME:GetString("Skillsets", "ChordjackShort"),
-	THEME:GetString("Skillsets", "TechnicalShort"),
-}
+local function skillSetString(name, suffix)
+	if skillSetKeycount() == 7 and skillSetNames7k[name] then
+		name = skillSetNames7k[name]
+	end
+	return THEME:GetString("Skillsets", name .. suffix)
+end
+
+-- these look up the names on every access so they follow the current game
+ms.SkillSetsTranslatedByName = setmetatable({}, {
+	__index = function(t, name)
+		return skillSetString(name, "")
+	end
+})
+
+ms.SkillSetsTranslated = setmetatable({}, {
+	__index = function(t, i)
+		return ms.SkillSets[i] and skillSetString(ms.SkillSets[i], "")
+	end
+})
+
+ms.SkillSetsShortTranslated = setmetatable({}, {
+	__index = function(t, i)
+		return ms.SkillSets[i] and skillSetString(ms.SkillSets[i], "Short")
+	end
+})
 
 
 ms.JudgeScalers = GAMESTATE:GetTimingScales()

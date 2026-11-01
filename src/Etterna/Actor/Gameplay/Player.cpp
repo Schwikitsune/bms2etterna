@@ -183,6 +183,44 @@ JudgedRows::Resize(size_t iMin)
 	m_iOffset = 0;
 }
 
+// 7k plays with LR2's judge rank windows (PG, GR, GD) instead of the judge
+// scale. LR2's BAD reaches 200ms but our miss window starts at 180ms.
+static const float LR2_WINDOWS[NUM_BMSJudgeRank][3] = {
+	{ 0.021F, 0.060F, 0.120F }, // EASY
+	{ 0.018F, 0.040F, 0.100F }, // NORMAL
+	{ 0.015F, 0.030F, 0.060F }, // HARD
+	{ 0.008F, 0.024F, 0.040F }, // VERY HARD
+};
+
+static auto
+GetLR2WindowSeconds(TimingWindow tw, float& out) -> bool
+{
+	const auto* style = GAMESTATE->GetCurrentStyle(PLAYER_1);
+	if (style == nullptr || style->m_iColsPerPlayer != 7)
+		return false;
+	auto rank = GAMESTATE->m_pPlayerState->m_PlayerOptions.GetCurrent()
+				  .m_BMSJudgeRank;
+	if (rank < 0 || rank >= NUM_BMSJudgeRank)
+		rank = BMSJudgeRank_Easy;
+	switch (tw) {
+		case TW_W1:
+			out = LR2_WINDOWS[rank][0];
+			return true;
+		case TW_W2:
+			out = LR2_WINDOWS[rank][1];
+			return true;
+		case TW_W3:
+			out = LR2_WINDOWS[rank][2];
+			return true;
+		case TW_W4:
+		case TW_W5:
+			out = MISS_WINDOW_BEGIN_SEC;
+			return true;
+		default:
+			return false;
+	}
+}
+
 auto
 Player::GetWindowSeconds(TimingWindow tw) -> float
 {
@@ -200,7 +238,11 @@ Player::GetWindowSeconds(TimingWindow tw) -> float
 			break;
 	}
 
-	float fSecs = m_fTimingWindowSeconds[tw];
+	float fSecs = 0.F;
+	if (GetLR2WindowSeconds(tw, fSecs)) {
+		return fSecs;
+	}
+	fSecs = m_fTimingWindowSeconds[tw];
 	fSecs *= GetTimingWindowScale();
 	fSecs = std::clamp(fSecs, 0.F, MISS_WINDOW_BEGIN_SEC);
 	return fSecs;
@@ -223,7 +265,11 @@ Player::GetWindowSecondsCustomScale(TimingWindow tw, float timingScale) -> float
 			break;
 	}
 
-	float fSecs = m_fTimingWindowSeconds[tw];
+	float fSecs = 0.F;
+	if (GetLR2WindowSeconds(tw, fSecs)) {
+		return fSecs;
+	}
+	fSecs = m_fTimingWindowSeconds[tw];
 	fSecs *= timingScale;
 	fSecs = std::clamp(fSecs, 0.F, MISS_WINDOW_BEGIN_SEC);
 	return fSecs;
@@ -1738,6 +1784,48 @@ Player::GetClosestNonEmptyRow(int iNoteRow,
 	return iNextRow;
 }
 
+// LR2 gives an empty POOR for a press that judges nothing while the next
+// note in that lane is at most a second away (its POOR window is 0-1000ms
+// early). It takes gauge but keeps the combo.
+static constexpr float LR2_EMPTY_POOR_SECONDS = 1.F;
+
+auto
+Player::IsEmptyPoorPress(int col, float fMusicSeconds, float fMusicRate) const
+  -> bool
+{
+	const auto iSongRow = BeatToNoteRow(GAMESTATE->m_Position.m_fSongBeat);
+	for (auto it = m_NoteData.lower_bound(col, iSongRow);
+		 it != m_NoteData.end(col);
+		 ++it) {
+		const auto& tn = it->second;
+		if (tn.type != TapNoteType_Tap && tn.type != TapNoteType_HoldHead) {
+			continue;
+		}
+		if (tn.result.tns != TNS_None || !m_Timing->IsJudgableAtRow(it->first)) {
+			continue;
+		}
+		const auto fAhead =
+		  (m_Timing->GetTimeFromRowFast(it->first) - fMusicSeconds) / fMusicRate;
+		return fAhead <= LR2_EMPTY_POOR_SECONDS;
+	}
+	return false;
+}
+
+void
+Player::DoEmptyPoor(int col)
+{
+	if (m_pPlayerStageStats != nullptr) {
+		m_pPlayerStageStats->m_iEmptyPoors++;
+	}
+	// TNS_None is the empty POOR row of the BMS gauge tables
+	ChangeLife(TNS_None);
+
+	Message msg("EmptyPoor");
+	msg.SetParam("Player", m_pPlayerState->m_PlayerNumber);
+	msg.SetParam("Column", col);
+	MESSAGEMAN->Broadcast(msg);
+}
+
 void
 Player::DoTapScoreNone()
 {
@@ -2314,7 +2402,9 @@ Player::Step(int col,
 
 				if (pTN->result.tns != TNS_None) {
 					SetJudgment(iRowOfOverlappingNoteOrRow, col, *pTN);
+					m_iTapRowScoreCol = col;
 					HandleTapRowScore(iRowOfOverlappingNoteOrRow);
+					m_iTapRowScoreCol = -1;
 				}
 			}
 		} else if (NoteDataWithScoring::IsRowCompletelyJudged(
@@ -2353,6 +2443,13 @@ Player::Step(int col,
 
 	if (score == TNS_None) {
 		DoTapScoreNone();
+	}
+
+	if (score == TNS_None && !bRelease && col != -1 &&
+		m_pPlayerState->m_PlayerController == PC_HUMAN &&
+		m_pLifeMeter != nullptr && m_pLifeMeter->IsBMSGauge() &&
+		IsEmptyPoorPress(col, fMusicSeconds, fMusicRate)) {
+		DoEmptyPoor(col);
 	}
 
 	if (!bRelease && col != -1) {
@@ -2650,7 +2747,9 @@ Player::UpdateTapNotesMissedOlderThan(float fMissIfOlderThanSeconds)
 			}
 			if (GAMESTATE->CountNotesSeparately()) {
 				SetJudgment(iter.Row(), iter.Track(), tn);
+				m_iTapRowScoreCol = iter.Track();
 				HandleTapRowScore(iter.Row());
+				m_iTapRowScoreCol = -1;
 			}
 		}
 	}
@@ -2878,7 +2977,26 @@ Player::HandleTapRowScore(unsigned row)
 		  false);
 	}
 
-	ChangeLife(scoreOfLastTap);
+	if (m_pLifeMeter != nullptr && m_pLifeMeter->IsBMSGauge()) {
+		// BMS gauges count every note of a chord, once each
+		if (m_iTapRowScoreCol >= 0) {
+			ChangeLife(m_NoteData.GetTapNote(m_iTapRowScoreCol, row).result.tns);
+		} else {
+			for (auto track = 0; track < m_NoteData.GetNumTracks(); ++track) {
+				const auto& tn = m_NoteData.GetTapNote(track, row);
+				if (tn.type == TapNoteType_Empty ||
+					tn.type == TapNoteType_Fake ||
+					tn.type == TapNoteType_Mine ||
+					tn.type == TapNoteType_AutoKeysound ||
+					tn.result.tns == TNS_None) {
+					continue;
+				}
+				ChangeLife(tn.result.tns);
+			}
+		}
+	} else {
+		ChangeLife(scoreOfLastTap);
+	}
 }
 
 void

@@ -1,0 +1,11 @@
+Notable features included in this noteskin
+
+- Forced columnwidth to match 40 width in osu!mania
+
+- Screen filter included in the noteskin itself to match the new columnwidth.
+  Please disable the theme's screen filter in player options. Customize the included filter in "1 receptor.lua"
+
+- Holds(long notes) are aligned so tails will end where the head starts
+
+- There are no explosions by default, but explosions retain aspect ratio when scaling the notefield in customize gameplay.
+  Should you add your own explosion textures, this means you won't get warped explosions when changing notefield scale

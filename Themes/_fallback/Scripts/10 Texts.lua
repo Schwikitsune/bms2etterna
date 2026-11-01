@@ -102,15 +102,22 @@ function getGradeStrings(diff)
 	end
 end;
 
+-- 7k plays by LR2 rules and uses its judgment names (themes define these)
+local function bmsJudgeString(getter, judge)
+	if hideMSD and hideMSD() and getter then
+		return getter(judge)
+	end
+end
+
 function getJudgeStrings(judge)
 	if judge ~= nil then
-		return judgeString[judge] or judge
+		return bmsJudgeString(getBMSJudgeName, judge) or judgeString[judge] or judge
 	end
 end;
 
 function getShortJudgeStrings(judge)
 	if judge ~= nil then
-		return shortJudgeString[judge] or judge
+		return bmsJudgeString(getBMSShortJudgeName, judge) or shortJudgeString[judge] or judge
 	end
 end;
 

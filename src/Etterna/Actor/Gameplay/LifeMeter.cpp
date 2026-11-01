@@ -41,12 +41,25 @@ class LunaLifeMeter : public Luna<LifeMeter>
 		return 1;
 	}
 
+	// the BMS gauge in effect ("Easy", "Normal", "Hard", "Death"), nil
+	// when the bar is not a BMS gauge
+	static int GetBMSGauge(T* p, lua_State* L)
+	{
+		const auto g = p->GetBMSGauge();
+		if (g < 0 || g >= NUM_BMSGauge)
+			lua_pushnil(L);
+		else
+			LuaHelpers::Push(L, BMSGaugeToString(static_cast<BMSGauge>(g)));
+		return 1;
+	}
+
 	LunaLifeMeter()
 	{
 		ADD_METHOD(GetLife);
 		ADD_METHOD(IsInDanger);
 		ADD_METHOD(IsHot);
 		ADD_METHOD(IsFailing);
+		ADD_METHOD(GetBMSGauge);
 	}
 };
 

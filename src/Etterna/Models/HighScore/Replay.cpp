@@ -215,6 +215,8 @@ Replay::GetNoteData(Steps* pSteps, bool bTransform)
 					po.m_bTurns[PlayerOptions::TURN_SOFT_SHUFFLE] = false;
 					po.m_bTurns[PlayerOptions::TURN_SUPER_SHUFFLE] = false;
 					po.m_bTurns[PlayerOptions::TURN_HRAN_SHUFFLE] = false;
+					if (po.UsesSeededBMSArrange())
+						po.m_BMSArrange = BMSArrange_Off;
 				} else {
 					GAMESTATE->m_iStageSeed = rngSeed;
 				}
@@ -278,7 +280,8 @@ Replay::CanSafelyTransformNoteData()
 	if (po.m_bTurns[PlayerOptions::TURN_SHUFFLE] ||
 		po.m_bTurns[PlayerOptions::TURN_SOFT_SHUFFLE] ||
 		po.m_bTurns[PlayerOptions::TURN_SUPER_SHUFFLE] ||
-		 po.m_bTurns[PlayerOptions::TURN_HRAN_SHUFFLE]) {
+		 po.m_bTurns[PlayerOptions::TURN_HRAN_SHUFFLE] ||
+		po.UsesSeededBMSArrange()) {
 
 		// shuffle with any rng means its good
 		return rngSeed != 0;
@@ -3345,7 +3348,9 @@ Replay::GenerateJudgeInfoAndReplaySnapshots(int startingRow, float timingScale)
 	{
 		PlayerOptions potmp;
 		potmp.FromString(mods);
-		if (potmp.ContainsTransformOrTurn() && rngSeed == 0)
+		if ((potmp.ContainsTransformOrTurn() ||
+			 potmp.UsesSeededBMSArrange()) &&
+			rngSeed == 0)
 			return false;
 	}
 

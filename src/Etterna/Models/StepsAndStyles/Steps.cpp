@@ -888,11 +888,20 @@ Steps::GetCNPSVector(const NoteData& nd,
 
 // lua start
 #include "Etterna/Models/Lua/LuaBinding.h"
+#include "Etterna/Actor/Gameplay/LifeMeterBar.h"
 /** @brief Allow Lua to have access to the Steps. */
 class LunaSteps : public Luna<Steps>
 {
   public:
 	DEFINE_METHOD(GetStepsType, m_StepsType)
+	// BMS gauge TOTAL, returns the value and its source
+	static int GetBMSTotal(T* p, lua_State* L)
+	{
+		std::string source;
+		lua_pushnumber(L, LifeMeterBar::GetBMSTotal(p->m_pSong, p, source));
+		LuaHelpers::Push(L, source);
+		return 2;
+	}
 	DEFINE_METHOD(GetDifficulty, GetDifficulty())
 	DEFINE_METHOD(GetDescription, GetDescription())
 	DEFINE_METHOD(GetChartStyle, GetChartStyle())
@@ -1417,6 +1426,7 @@ class LunaSteps : public Luna<Steps>
 		ADD_METHOD(HasSignificantTimingChanges);
 		ADD_METHOD(GetRadarValues);
 		ADD_METHOD(GetRelevantRadars);
+		ADD_METHOD(GetBMSTotal);
 		ADD_METHOD(GetTimingData);
 		ADD_METHOD(GetChartName);
 		ADD_METHOD(GetStepsType);

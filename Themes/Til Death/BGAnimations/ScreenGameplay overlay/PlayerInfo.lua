@@ -57,6 +57,10 @@ local t = Def.ActorFrame {
 			self:xy(PlayerFrameX + 52, PlayerFrameY + 30):halign(0):zoom(0.75):maxwidth(50)
 		end,
 		SetCommand = function(self)
+			if hideMSD() then
+				self:settext("")
+				return
+			end
 			local meter = GAMESTATE:GetCurrentSteps():GetMSD(getCurRateValue(), 1)
 			self:settextf("%05.2f", meter)
 			self:diffuse(byMSD(meter))

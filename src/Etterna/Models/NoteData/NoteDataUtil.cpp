@@ -3028,6 +3028,87 @@ NoteDataUtil::ConvertAdditionsToRegular(NoteData& inout)
 	inout.RevalidateATIs(std::vector<int>(), false);
 }
 
+// LR2 style lane arrangement, only applied to 7k charts. The seeded modes use
+// the stage seed so replays and rescoring rebuild the same lanes.
+static void
+ApplyBMSArrange(NoteData& nd,
+				StepsType st,
+				const PlayerOptions& po,
+				int iStartIndex,
+				int iEndIndex)
+{
+	const auto n = nd.GetNumTracks();
+	if (po.m_BMSArrange == BMSArrange_Off || n != 7)
+		return;
+
+	switch (po.m_BMSArrange) {
+		case BMSArrange_Mirror:
+			NoteDataUtil::Turn(
+			  nd, st, NoteDataUtil::mirror, iStartIndex, iEndIndex);
+			return;
+		case BMSArrange_SRandom:
+			NoteDataUtil::Turn(
+			  nd, st, NoteDataUtil::super_shuffle, iStartIndex, iEndIndex);
+			return;
+		case BMSArrange_HRandom:
+			NoteDataUtil::Turn(
+			  nd, st, NoteDataUtil::hran_shuffle, iStartIndex, iEndIndex);
+			return;
+		default:
+			break;
+	}
+
+	// new lane t takes the notes of chart lane iTakeFromTrack[t]
+	int iTakeFromTrack[MAX_NOTE_TRACKS];
+	for (auto t = 0; t < MAX_NOTE_TRACKS; ++t)
+		iTakeFromTrack[t] = t;
+
+	RandomGen rnd(GAMESTATE->m_iStageSeed);
+	switch (po.m_BMSArrange) {
+		case BMSArrange_Random: {
+			// never hand back the original order
+			auto same = true;
+			while (same) {
+				std::shuffle(&iTakeFromTrack[0], &iTakeFromTrack[n], rnd);
+				same = true;
+				for (auto t = 0; t < n; ++t)
+					if (iTakeFromTrack[t] != t)
+						same = false;
+			}
+			break;
+		}
+		case BMSArrange_RRandom: {
+			// rotate the lanes by 1..n-1, flipped half of the time
+			const auto shift = 1 + static_cast<int>(rnd() % (n - 1));
+			const auto flip = rnd() % 2 == 1;
+			for (auto t = 0; t < n; ++t)
+				iTakeFromTrack[t] = ((flip ? n - 1 - t : t) + shift) % n;
+			break;
+		}
+		case BMSArrange_Custom: {
+			// must use every lane exactly once, otherwise play it as is
+			const auto& lanes = po.m_sBMSLanes;
+			if (static_cast<int>(lanes.size()) != n)
+				return;
+			bool used[MAX_NOTE_TRACKS] = {};
+			for (auto t = 0; t < n; ++t) {
+				const auto lane = lanes[t] - '1';
+				if (lane < 0 || lane >= n || used[lane])
+					return;
+				used[lane] = true;
+				iTakeFromTrack[t] = lane;
+			}
+			break;
+		}
+		default:
+			return;
+	}
+
+	NoteData tempNoteData;
+	tempNoteData.LoadTransformed(nd, n, iTakeFromTrack);
+	nd.CopyAll(tempNoteData);
+}
+
 void
 NoteDataUtil::TransformNoteData(NoteData& nd,
 								TimingData const& timing_data,
@@ -3122,6 +3203,8 @@ NoteDataUtil::TransformNoteData(NoteData& nd,
 		Turn(nd, st, super_shuffle, iStartIndex, iEndIndex);
 	if (po.m_bTurns[PlayerOptions::TURN_HRAN_SHUFFLE])
 		Turn(nd, st, hran_shuffle, iStartIndex, iEndIndex);
+
+	ApplyBMSArrange(nd, st, po, iStartIndex, iEndIndex);
 
 	nd.RevalidateATIs(std::vector<int>(), false);
 }

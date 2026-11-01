@@ -105,6 +105,11 @@ class Player : public ActorFrame
 
 	void ScoreAllActiveHoldsLetGo();
 	void DoTapScoreNone();
+	// LR2 empty POOR, 7k only
+	[[nodiscard]] auto IsEmptyPoorPress(int col,
+										float fMusicSeconds,
+										float fMusicRate) const -> bool;
+	void DoEmptyPoor(int col);
 	void AddHoldToReplayData(int col,
 							 const TapNote* pTN,
 							 int RowOfOverlappingNoteOrRow) const;
@@ -184,6 +189,9 @@ class Player : public ActorFrame
 	void UpdateCrossedRows(const std::chrono::steady_clock::time_point& now);
 	void FlashGhostRow(int iRow);
 	virtual void HandleTapRowScore(unsigned row);
+	// column of the note HandleTapRowScore is called for, when notes are
+	// judged separately (-1 = the whole row); BMS gauges need it
+	int m_iTapRowScoreCol = -1;
 	void HandleHoldScore(const TapNote& tn) const;
 	void HandleHoldCheckpoint(int iRow,
 							  int iNumHoldsHeldThisRow,

@@ -41,6 +41,17 @@ class LifeMeter : public ActorFrame
 	[[nodiscard]] virtual auto IsInDanger() const -> bool = 0;
 	[[nodiscard]] virtual auto IsHot() const -> bool = 0;
 	[[nodiscard]] virtual auto IsFailing() const -> bool = 0;
+	/** @brief Whether the player fails if the song ends right now. Gauges
+	 * that only judge at the end (BMS groove) differ from IsFailing. */
+	[[nodiscard]] virtual auto IsFailingAtEnd() const -> bool
+	{
+		return IsFailing();
+	}
+	/** @brief BMS gauges take a judgement for every note, not every row. */
+	[[nodiscard]] virtual auto IsBMSGauge() const -> bool { return false; }
+	/** @brief The BMS gauge being played on (a BMSGauge), -1 for others. With
+	 * gauge auto shift it is the best gauge still alive. */
+	[[nodiscard]] virtual auto GetBMSGauge() const -> int { return -1; }
 	[[nodiscard]] virtual auto GetLife() const -> float
 	{
 		return 0;

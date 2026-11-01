@@ -58,6 +58,10 @@ local translated_info = {
 	TapsHit = THEME:GetString("GeneralInfo", "ProfileTapsHit"),
 	Playtime = THEME:GetString("GeneralInfo", "ProfilePlaytime"),
 	Judge = THEME:GetString("GeneralInfo", "ProfileJudge"),
+	JudgeRank = THEME:GetString("GeneralInfo", "ProfileJudgeRank"),
+	Gauge = THEME:GetString("GeneralInfo", "ProfileGauge"),
+	Arrange = THEME:GetString("GeneralInfo", "ProfileArrange"),
+	AutoShift = THEME:GetString("GeneralInfo", "ProfileAutoShift"),
 	RefreshSongs = THEME:GetString("GeneralInfo", "DifferentialReloadTrigger"),
 	SongsLoaded = THEME:GetString("GeneralInfo", "ProfileSongsLoaded"),
 	SessionTime = THEME:GetString("GeneralInfo", "SessionTime"),
@@ -418,9 +422,17 @@ t[#t + 1] = Def.ActorFrame {
 		OptionsScreenClosedMessageCommand = function(self)
 			self:queuecommand("Set")
 		end,
+		BMSOptionChangedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
 		SetCommand = function(self)
 			local online = IsNetSMOnline() and IsSMOnlineLoggedIn() and NSMAN:IsETTP()
 			self:y(AvatarY + 41 - (online and 18 or 0))
+			-- 7k uses the LR2 judge rank instead of the etterna judge
+			if hideMSD() then
+				self:settextf("%s: %s", translated_info["JudgeRank"], getBMSOptionName("JudgeRank"))
+				return
+			end
 			self:settextf("%s: %s", translated_info["Judge"], GetTimingDifficulty())
 		end,
 		MouseOverCommand = function(self)
@@ -430,6 +442,14 @@ t[#t + 1] = Def.ActorFrame {
 			highlightIfOver(self)
 		end,
 		MouseDownCommand = function(self, params)
+			if hideMSD() then
+				if params.event == "DeviceButton_left mouse button" then
+					changeBMSOption("JudgeRank", 1)
+				elseif params.event == "DeviceButton_right mouse button" then
+					changeBMSOption("JudgeRank", -1)
+				end
+				return
+			end
 			if params.event == "DeviceButton_left mouse button" then
 				-- raise judge
 				local cur_judge = GetTimingDifficulty()
@@ -447,6 +467,130 @@ t[#t + 1] = Def.ActorFrame {
 					SetTimingDifficulty(scale)
 					self:queuecommand("Set")
 				end
+			end
+		end
+	},
+	-- LR2 gauge picker next to the judge rank, 7k only
+	UIElements.TextToolTip(1, 1, "Common Normal") .. {
+		InitCommand = function(self)
+			self:xy(SCREEN_CENTER_X - capWideScale(125,175), AvatarY + 29):halign(0.5):zoom(0.4):diffuse(ButtonColor)
+		end,
+		BeginCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		OptionsScreenClosedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		BMSOptionChangedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		SetCommand = function(self)
+			if not hideMSD() then
+				self:visible(false)
+				return
+			end
+			local online = IsNetSMOnline() and IsSMOnlineLoggedIn() and NSMAN:IsETTP()
+			self:y(AvatarY + 29 - (online and 18 or 0))
+			self:visible(true)
+			self:settextf("%s: %s", translated_info["Gauge"], getBMSOptionName("Gauge"))
+		end,
+		MouseOverCommand = function(self)
+			highlightIfOver(self)
+		end,
+		MouseOutCommand = function(self)
+			highlightIfOver(self)
+		end,
+		MouseDownCommand = function(self, params)
+			if not self:IsVisible() then return end
+			if params.event == "DeviceButton_left mouse button" then
+				changeBMSOption("Gauge", 1)
+			elseif params.event == "DeviceButton_right mouse button" then
+				changeBMSOption("Gauge", -1)
+			end
+		end
+	},
+	-- LR2 lane arrangement picker above the gauge, 7k only
+	-- picking Custom (or middle clicking) asks for the lane order
+	UIElements.TextToolTip(1, 1, "Common Normal") .. {
+		InitCommand = function(self)
+			self:xy(SCREEN_CENTER_X - capWideScale(125,175), AvatarY + 17):halign(0.5):zoom(0.4):diffuse(ButtonColor)
+		end,
+		BeginCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		OptionsScreenClosedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		BMSOptionChangedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		SetCommand = function(self)
+			if not hideMSD() then
+				self:visible(false)
+				return
+			end
+			local online = IsNetSMOnline() and IsSMOnlineLoggedIn() and NSMAN:IsETTP()
+			self:y(AvatarY + 17 - (online and 18 or 0))
+			self:visible(true)
+			self:settextf("%s: %s", translated_info["Arrange"], getBMSArrangeText())
+		end,
+		MouseOverCommand = function(self)
+			highlightIfOver(self)
+		end,
+		MouseOutCommand = function(self)
+			highlightIfOver(self)
+		end,
+		MouseDownCommand = function(self, params)
+			if not self:IsVisible() then return end
+			if params.event == "DeviceButton_left mouse button" then
+				changeBMSOption("Arrange", 1)
+			elseif params.event == "DeviceButton_right mouse button" then
+				changeBMSOption("Arrange", -1)
+			elseif params.event == "DeviceButton_middle mouse button" then
+				editBMSLanes()
+				return
+			else
+				return
+			end
+			if isBMSCustomArrange() then
+				editBMSLanes()
+			end
+		end
+	},
+	-- gauge auto shift toggle above the lanes, 7k only
+	UIElements.TextToolTip(1, 1, "Common Normal") .. {
+		InitCommand = function(self)
+			self:xy(SCREEN_CENTER_X - capWideScale(125,175), AvatarY + 5):halign(0.5):zoom(0.4):diffuse(ButtonColor)
+		end,
+		BeginCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		OptionsScreenClosedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		BMSOptionChangedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
+		SetCommand = function(self)
+			if not hideMSD() then
+				self:visible(false)
+				return
+			end
+			local online = IsNetSMOnline() and IsSMOnlineLoggedIn() and NSMAN:IsETTP()
+			self:y(AvatarY + 5 - (online and 18 or 0))
+			self:visible(true)
+			self:settextf("%s: %s", translated_info["AutoShift"], getBMSAutoShiftText())
+		end,
+		MouseOverCommand = function(self)
+			highlightIfOver(self)
+		end,
+		MouseOutCommand = function(self)
+			highlightIfOver(self)
+		end,
+		MouseDownCommand = function(self, params)
+			if not self:IsVisible() then return end
+			if params.event == "DeviceButton_left mouse button" or params.event == "DeviceButton_right mouse button" then
+				toggleBMSAutoShift()
 			end
 		end
 	},

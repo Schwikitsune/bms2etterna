@@ -92,6 +92,10 @@ ScreenGameplayReplay::ScreenGameplayReplay()
 				po.m_bTurns[PlayerOptions::TURN_SUPER_SHUFFLE] = false;
 				po.m_bTurns[PlayerOptions::TURN_HRAN_SHUFFLE] = false;
 			}
+			playerOptions.m_BMSArrange = po.m_BMSArrange;
+			playerOptions.m_sBMSLanes = po.m_sBMSLanes;
+			if (settings.replayRngSeed == 0 && po.UsesSeededBMSArrange())
+				playerOptions.m_BMSArrange = BMSArrange_Off;
 		};
 		f(GAMESTATE->m_pPlayerState->m_PlayerOptions.GetPreferred());
 		f(GAMESTATE->m_pPlayerState->m_PlayerOptions.GetCurrent());

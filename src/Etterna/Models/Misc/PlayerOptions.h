@@ -43,6 +43,57 @@ auto
 DrainTypeToLocalizedString(DrainType cat) -> const std::string&;
 LuaDeclareType(DrainType);
 
+/** @brief LR2 style life gauges, only used on 7k charts. */
+enum BMSGauge
+{
+	BMSGauge_Easy,
+	BMSGauge_Normal,
+	BMSGauge_Hard,
+	BMSGauge_Death,
+	NUM_BMSGauge,
+	BMSGauge_Invalid
+};
+auto
+BMSGaugeToString(BMSGauge cat) -> const std::string&;
+auto
+BMSGaugeToLocalizedString(BMSGauge cat) -> const std::string&;
+LuaDeclareType(BMSGauge);
+
+/** @brief LR2 judge rank (timing windows), only used on 7k charts. */
+enum BMSJudgeRank
+{
+	BMSJudgeRank_Easy,
+	BMSJudgeRank_Normal,
+	BMSJudgeRank_Hard,
+	BMSJudgeRank_VeryHard,
+	NUM_BMSJudgeRank,
+	BMSJudgeRank_Invalid
+};
+auto
+BMSJudgeRankToString(BMSJudgeRank cat) -> const std::string&;
+auto
+BMSJudgeRankToLocalizedString(BMSJudgeRank cat) -> const std::string&;
+LuaDeclareType(BMSJudgeRank);
+
+/** @brief LR2 style lane arrangement, only applied to 7k charts. */
+enum BMSArrange
+{
+	BMSArrange_Off,
+	BMSArrange_Mirror,
+	BMSArrange_Random,
+	BMSArrange_RRandom,
+	BMSArrange_SRandom,
+	BMSArrange_HRandom,
+	BMSArrange_Custom,
+	NUM_BMSArrange,
+	BMSArrange_Invalid
+};
+auto
+BMSArrangeToString(BMSArrange cat) -> const std::string&;
+auto
+BMSArrangeToLocalizedString(BMSArrange cat) -> const std::string&;
+LuaDeclareType(BMSArrange);
+
 /** @brief Per-player options that are not saved between sessions. */
 class PlayerOptions
 {
@@ -97,6 +148,8 @@ class PlayerOptions
 	// Returns true for modifiers that should invalidate a score or otherwise
 	// make it impossible to calculate Replay info
 	[[nodiscard]] auto ContainsTransformOrTurn() const -> bool;
+	// lane arrangements that need the stage seed to be rebuilt
+	[[nodiscard]] auto UsesSeededBMSArrange() const -> bool;
 
 	[[nodiscard]] auto GetInvalidatingModifiers() const
 	  -> std::vector<std::string>;
@@ -221,6 +274,15 @@ class PlayerOptions
 
 	LifeType m_LifeType{ LifeType_Bar };
 	DrainType m_DrainType{ DrainType_Normal }; // only used with LifeBar
+	BMSGauge m_BMSGauge{ BMSGauge_Normal };	   // only used on 7k charts
+	BMSJudgeRank m_BMSJudgeRank{ BMSJudgeRank_Easy }; // only used on 7k
+	BMSArrange m_BMSArrange{ BMSArrange_Off };		   // only used on 7k
+	// lane order for BMSArrange_Custom, e.g. "3216547" (lane 1 plays the
+	// notes of chart lane 3)
+	std::string m_sBMSLanes{ "1234567" };
+	// gauge auto shift: lower gauges run alongside the chosen one and the
+	// best one that survives decides the clear, only used on 7k
+	bool m_bBMSAutoShift{ false };
 	int m_BatteryLives{ 4 };
 	/* All floats have a corresponding speed setting, which determines how fast
 	 * PlayerOptions::Approach approaches. */

@@ -82,8 +82,38 @@ local function judgmentZoom(value)
 	end
 end
 
-local t = Def.ActorFrame {
-	Def.Sprite {
+-- 7k shows LR2 judgment names as text instead of the judgment graphic
+local bms = hideMSD()
+
+-- LR2 style text judgment: quick pop, then hold and fade
+local function showBMSJudgment(self, tns)
+	local jz = MovableValues.JudgeZoom or 1
+	self:finishtweening():stopeffect():visible(true)
+	self:settext(getBMSJudgeName(tns)):diffuse(getBMSJudgeColor(tns)):diffusealpha(1)
+	if tns == "TapNoteScore_W1" then
+		self:diffuseshift():effectperiod(0.08):effectcolor1(color("#80e8ff")):effectcolor2(color("#ffffa0"))
+	end
+	if JTEnabled then
+		self:zoom(1.15 * jz):linear(0.05):zoom(1 * jz):sleep(0.5):linear(0.1):diffusealpha(0)
+	else
+		self:zoom(jz)
+	end
+end
+
+local judgmentActor
+if bms then
+	judgmentActor = LoadFont("Common Large") .. {
+		Name = "Judgment",
+		InitCommand = function(self)
+			self:visible(false):xy(MovableValues.JudgeX, MovableValues.JudgeY):shadowlength(1)
+			self:settext("PGREAT")
+		end,
+		ResetCommand = function(self)
+			self:finishtweening():stopeffect():visible(false)
+		end
+	}
+else
+	judgmentActor = Def.Sprite {
 		Texture = "../../../../" .. getAssetPath("judgment"),
 		Name = "Judgment",
 		InitCommand = function(self)
@@ -92,7 +122,11 @@ local t = Def.ActorFrame {
 		ResetCommand = function(self)
 			self:finishtweening():stopeffect():visible(false)
 		end
-	},
+	}
+end
+
+local t = Def.ActorFrame {
+	judgmentActor,
 	OnCommand = function(self)
 		c = self:GetChildren()
 		judgmentZoom(MovableValues.JudgeZoom)
@@ -108,6 +142,12 @@ local t = Def.ActorFrame {
 	end,
 	JudgmentMessageCommand = function(self, param)
 		if param.HoldNoteScore or param.FromReplay then
+			return
+		end
+		if bms then
+			if getBMSJudgeName(param.TapNoteScore) then
+				showBMSJudgment(c.Judgment, param.TapNoteScore)
+			end
 			return
 		end
 		local iNumStates = c.Judgment:GetNumStates()
@@ -127,6 +167,12 @@ local t = Def.ActorFrame {
 		c.Judgment:setstate(iFrame)
 		if JTEnabled then
 			JudgeCmds[param.TapNoteScore](c.Judgment)
+		end
+	end,
+	-- LR2 empty POOR: a press with no note to hit, the combo stays
+	EmptyPoorMessageCommand = function(self)
+		if bms then
+			showBMSJudgment(c.Judgment, "TapNoteScore_Miss")
 		end
 	end,
 	MovableBorder(0, 0, 1, MovableValues.JudgeX, MovableValues.JudgeY)

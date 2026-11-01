@@ -539,7 +539,12 @@ FillInHighScore(const PlayerStageStats& pss,
 
 	std::vector<std::string> asModifiers;
 	{
-		auto sPlayerOptions = ps.m_PlayerOptions.GetStage().GetString();
+		// a gauge auto shift clear is saved as a clear on the gauge that
+		// survived, the lamp is read from the modifiers
+		auto po = ps.m_PlayerOptions.GetStage();
+		if (pss.m_iBMSClearGauge >= 0 && pss.m_iBMSClearGauge < NUM_BMSGauge)
+			po.m_BMSGauge = static_cast<BMSGauge>(pss.m_iBMSClearGauge);
+		auto sPlayerOptions = po.GetString();
 		if (!sPlayerOptions.empty()) {
 			asModifiers.push_back(sPlayerOptions);
 		}
@@ -619,6 +624,8 @@ FillInHighScore(const PlayerStageStats& pss,
 			po.m_bTurns[PlayerOptions::TURN_SOFT_SHUFFLE] = false;
 			po.m_bTurns[PlayerOptions::TURN_SUPER_SHUFFLE] = false;
 			po.m_bTurns[PlayerOptions::TURN_HRAN_SHUFFLE] = false;
+			if (po.UsesSeededBMSArrange())
+				po.m_BMSArrange = BMSArrange_Off;
 		} else {
 			GAMESTATE->m_iStageSeed = hs.GetStageSeed();
 		}
