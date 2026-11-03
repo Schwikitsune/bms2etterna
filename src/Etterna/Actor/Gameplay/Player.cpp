@@ -184,7 +184,9 @@ JudgedRows::Resize(size_t iMin)
 }
 
 // 7k plays with LR2's judge rank windows (PG, GR, GD) instead of the judge
-// scale. LR2's BAD reaches 200ms but our miss window starts at 180ms.
+// scale. LR2's BAD reaches 200ms on every rank, so on 7k the miss window
+// starts there instead of at 180ms.
+static constexpr float LR2_BAD_WINDOW_SEC = 0.2F;
 static const float LR2_WINDOWS[NUM_BMSJudgeRank][3] = {
 	{ 0.021F, 0.060F, 0.120F }, // EASY
 	{ 0.018F, 0.040F, 0.100F }, // NORMAL
@@ -193,10 +195,16 @@ static const float LR2_WINDOWS[NUM_BMSJudgeRank][3] = {
 };
 
 static auto
-GetLR2WindowSeconds(TimingWindow tw, float& out) -> bool
+IsLR2Judging() -> bool
 {
 	const auto* style = GAMESTATE->GetCurrentStyle(PLAYER_1);
-	if (style == nullptr || style->m_iColsPerPlayer != 7)
+	return style != nullptr && style->m_iColsPerPlayer == 7;
+}
+
+static auto
+GetLR2WindowSeconds(TimingWindow tw, float& out) -> bool
+{
+	if (!IsLR2Judging())
 		return false;
 	auto rank = GAMESTATE->m_pPlayerState->m_PlayerOptions.GetCurrent()
 				  .m_BMSJudgeRank;
@@ -214,7 +222,7 @@ GetLR2WindowSeconds(TimingWindow tw, float& out) -> bool
 			return true;
 		case TW_W4:
 		case TW_W5:
-			out = MISS_WINDOW_BEGIN_SEC;
+			out = LR2_BAD_WINDOW_SEC;
 			return true;
 		default:
 			return false;
@@ -2100,7 +2108,8 @@ Player::Step(int col,
 	 */
 
 	int iStepSearchRows;
-	static const auto StepSearchDistance = GetMaxStepDistanceSeconds();
+	// not static, the window depends on the style (wider on 7k)
+	const auto StepSearchDistance = GetMaxStepDistanceSeconds();
 
 	// if the nerv is too small, dont optimize
 	auto skipstart = nerv.size() > 10 ? nerv[10] : iSongRow + 1;
@@ -2254,7 +2263,7 @@ Player::Step(int col,
 								score = TNS_W4;
 							} else if (fSecondsFromExact <=
 									   max(GetWindowSeconds(TW_W5),
-										   MISS_WINDOW_BEGIN_SEC)) {
+										   GetMissWindowSeconds())) {
 								score = TNS_W5;
 							}
 						}
@@ -3090,6 +3099,12 @@ Player::HandleHoldScore(const TapNote& tn) const
 }
 
 auto
+Player::GetMissWindowSeconds() -> float
+{
+	return IsLR2Judging() ? LR2_BAD_WINDOW_SEC : MISS_WINDOW_BEGIN_SEC;
+}
+
+auto
 Player::GetMaxStepDistanceSeconds() -> float
 {
 	// The former behavior of this did not follow capped 180ms window logic.
@@ -3097,7 +3112,7 @@ Player::GetMaxStepDistanceSeconds() -> float
 	// Setting this hard to .18 x rate brings it back into line.
 	// (On that note, this should only be used in the context of music
 	// timing, because at a 3x rate this would expand by 3x correctly)
-	float fMax = MISS_WINDOW_BEGIN_SEC;
+	float fMax = GetMissWindowSeconds();
 	/*
 	float fMax = 0;
 	fMax = max(fMax, GetWindowSeconds(TW_W5));

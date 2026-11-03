@@ -902,6 +902,19 @@ class LunaSteps : public Luna<Steps>
 		LuaHelpers::Push(L, source);
 		return 2;
 	}
+	// BMS #RANK (0 VERY HARD .. 3 EASY, 4 VERY EASY) and its source, nil
+	// when the chart has none
+	static int GetBMSRank(T* p, lua_State* L)
+	{
+		std::string source;
+		const auto rank = LifeMeterBar::GetBMSRank(p->m_pSong, p, source);
+		if (rank < 0)
+			lua_pushnil(L);
+		else
+			lua_pushnumber(L, rank);
+		LuaHelpers::Push(L, source);
+		return 2;
+	}
 	DEFINE_METHOD(GetDifficulty, GetDifficulty())
 	DEFINE_METHOD(GetDescription, GetDescription())
 	DEFINE_METHOD(GetChartStyle, GetChartStyle())
@@ -1427,6 +1440,7 @@ class LunaSteps : public Luna<Steps>
 		ADD_METHOD(GetRadarValues);
 		ADD_METHOD(GetRelevantRadars);
 		ADD_METHOD(GetBMSTotal);
+		ADD_METHOD(GetBMSRank);
 		ADD_METHOD(GetTimingData);
 		ADD_METHOD(GetChartName);
 		ADD_METHOD(GetStepsType);

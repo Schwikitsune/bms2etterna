@@ -43,6 +43,11 @@ class LifeMeterBar : public LifeMeter
 	static float GetBMSTotal(const Song* song,
 							 const Steps* steps,
 							 std::string& source);
+	/** @brief BMS #RANK of a chart (0 VERY HARD, 1 HARD, 2 NORMAL, 3 EASY,
+	 * 4 VERY EASY) and where it came from, -1 when the chart doesn't say */
+	static int GetBMSRank(const Song* song,
+						  const Steps* steps,
+						  std::string& source);
 
   private:
 	// BMS (beatoraja) gauge, used instead of the normal bar on 7k charts.

@@ -249,10 +249,10 @@ LR2DamageScale(float total, float notes)
 	return std::max(fix1, fix2);
 }
 
-// Lookup of BMS #TOTAL values. Every json in Songs/total/ (insane_total.json
-// from the table script, bms_total.json from tools/bms_total) maps the md5 of
-// a raw .bms file to its TOTAL, title and original file name. Bms files put
-// in that folder count too. Converted charts (.sm/.ssc) have no source file
+// Lookup of BMS #TOTAL and #RANK values. Every json in Songs/total/
+// (insane_total.json from the table script, bms_total.json from
+// tools/bms_total) maps the md5 of a raw .bms file to its TOTAL, RANK, title
+// and original file name. Bms files put in that folder count too. Converted charts (.sm/.ssc) have no source file
 // to hash, so they are matched by file name (BMS2SM keeps the bms name), then
 // by title + subtitle, using the note count when a title is ambiguous.
 namespace {
@@ -260,6 +260,8 @@ struct BMSTotalEntry
 {
 	float total{ 0.f };
 	bool fromBMS{ false }; // read from a bms file, not a table comment
+	int rank{ -1 };		   // bms #RANK (0 VERY HARD .. 3 EASY), -1 unknown
+	float defexrank{ -1.f }; // bms #DEFEXRANK (percent, 100 = NORMAL), -1 unknown
 	int notes{ 0 };		   // bms note count, scratch included
 	std::string stem;	   // original file name, lower case, no extension
 	std::vector<std::string> titles;
@@ -301,46 +303,61 @@ FileStem(const std::string& path)
 	return make_lower(name);
 }
 
-// #TOTAL straight from a bms header
+// a numeric header value (#TOTAL, #RANK) straight from a bms file, -1 when
+// the file doesn't have it. The line nearest the end of the file wins, line
+// is where it was found.
 float
-ReadBMSHeaderTotal(const std::string& path)
+ReadBMSHeaderValue(const std::string& path,
+				   const std::string& tag,
+				   int* line = nullptr)
 {
 	std::vector<std::string> lines;
 	if (!GetFileContents(path, lines))
-		return 0.f;
-	for (const auto& line : lines) {
-		if (line.size() > 7 && line[0] == '#' &&
-			make_upper(line.substr(1, 5)) == "TOTAL" &&
-			std::isspace(static_cast<unsigned char>(line[6])))
-			return StringToFloat(line.substr(7));
+		return -1.f;
+	const auto n = tag.size();
+	auto value = -1.f;
+	for (size_t i = 0; i < lines.size(); ++i) {
+		const auto& l = lines[i];
+		if (l.size() > n + 2 && l[0] == '#' &&
+			make_upper(l.substr(1, n)) == tag &&
+			std::isspace(static_cast<unsigned char>(l[n + 1]))) {
+			value = StringToFloat(l.substr(n + 2));
+			if (line != nullptr)
+				*line = static_cast<int>(i);
+		}
 	}
-	return 0.f;
+	return value;
 }
 
-// #TOTAL:x; written into a converted .sm/.ssc. Read from the file itself,
-// the song cache doesn't keep tags it doesn't know.
+// #TAG:x; written into a converted .sm/.ssc, -1 when it isn't there. Read
+// from the file itself, the song cache doesn't keep tags it doesn't know.
 float
-ReadSMTotal(const std::string& path)
+ReadSMValue(const std::string& path, const std::string& tag)
 {
 	static std::unordered_map<std::string, float> cache;
-	const auto cached = cache.find(path);
+	const auto key = tag + ":" + path;
+	const auto cached = cache.find(key);
 	if (cached != cache.end())
 		return cached->second;
-	auto total = 0.f;
+	auto value = -1.f;
+	const auto prefix = "#" + tag + ":";
 	std::vector<std::string> lines;
 	if (GetFileContents(path, lines)) {
 		for (auto line : lines) {
 			TrimLeft(line);
-			if (line.size() > 7 && make_upper(line.substr(0, 7)) == "#TOTAL:") {
-				line = line.substr(7, line.find(';') - 7);
+			if (line.size() > prefix.size() &&
+				make_upper(line.substr(0, prefix.size())) == prefix) {
+				line = line.substr(prefix.size(),
+								   line.find(';') - prefix.size());
 				Trim(line);
-				total = StringToFloat(line);
+				if (!line.empty())
+					value = StringToFloat(line);
 				break;
 			}
 		}
 	}
-	cache[path] = total;
-	return total;
+	cache[key] = value;
+	return value;
 }
 
 // merge what one source knows about a chart; bms values beat table comments
@@ -349,6 +366,8 @@ AddBMSTotal(BMSTotalTable& table,
 			const std::string& md5,
 			float total,
 			bool fromBMS,
+			int rank,
+			float defexrank,
 			int notes,
 			const std::string& file,
 			const std::string& title)
@@ -358,6 +377,10 @@ AddBMSTotal(BMSTotalTable& table,
 		e.total = total;
 		e.fromBMS = fromBMS;
 	}
+	if (rank >= 0 && (e.rank < 0 || fromBMS))
+		e.rank = rank;
+	if (defexrank > 0.f && (e.defexrank <= 0.f || fromBMS))
+		e.defexrank = defexrank;
 	if (e.notes <= 0)
 		e.notes = notes;
 	if (e.stem.empty() && !file.empty())
@@ -418,13 +441,34 @@ GetBMSTotalTable()
 				const auto notes = c.HasMember("notes") && c["notes"].IsInt()
 									 ? c["notes"].GetInt()
 									 : 0;
+				// bms #RANK, 0 VERY HARD .. 3 EASY (4 VERY EASY)
+				auto rank = c.HasMember("rank") && c["rank"].IsInt()
+							  ? c["rank"].GetInt()
+							  : -1;
+				// bms #DEFEXRANK, percent where 100 is NORMAL
+				const auto defexrank =
+				  c.HasMember("defexrank") && c["defexrank"].IsNumber()
+					? c["defexrank"].GetFloat()
+					: -1.f;
+				// "rank": null means the bms file has neither header, LR2
+				// plays that on #RANK 2. Table jsons without the key say
+				// nothing about it.
+				if (c.HasMember("rank") && c["rank"].IsNull() &&
+					defexrank <= 0.f)
+					rank = 2;
 				const auto md5 = make_lower(it.name.GetString());
-				AddBMSTotal(table, md5, total, source == "bms", notes,
+				AddBMSTotal(table,
+							md5,
+							total,
+							source == "bms",
+							rank,
+							defexrank,
+							notes,
 							str(c, "file"),
 							str(c, "title") + str(c, "subtitle"));
 				if (!str(c, "subtitle").empty())
 					AddBMSTotal(
-					  table, md5, 0.f, false, 0, "", str(c, "title"));
+					  table, md5, 0.f, false, -1, -1.f, 0, "", str(c, "title"));
 				if (!str(c, "sha256").empty())
 					table.sha256[make_lower(str(c, "sha256"))] = md5;
 			}
@@ -433,22 +477,38 @@ GetBMSTotalTable()
 			  doc["charts"].MemberCount(), withTotal);
 		}
 
-		// bms files put in the folder: their own #TOTAL and name
+		// bms files put in the folder: their own #TOTAL, #RANK and name
 		files.clear();
 		FILEMAN->GetDirListingWithMultipleExtensions(
 		  dir, { "bms", "bme", "bml", "pms" }, files, ONLY_FILE, true);
 		for (const auto& file : files) {
-			const auto total = ReadBMSHeaderTotal(file);
+			const auto total = ReadBMSHeaderValue(file, "TOTAL");
+			// of #RANK and #DEFEXRANK the one nearer the end counts, and a
+			// file with neither plays on #RANK 2 like in LR2
+			auto rankLine = -1;
+			auto defexLine = -1;
+			auto rank =
+			  static_cast<int>(ReadBMSHeaderValue(file, "RANK", &rankLine));
+			auto defexrank =
+			  ReadBMSHeaderValue(file, "DEFEXRANK", &defexLine);
+			if (rankLine > defexLine)
+				defexrank = -1.f;
+			if (rank < 0 && defexrank <= 0.f)
+				rank = 2;
 			const auto md5 =
 			  make_lower(BinaryToHex(CryptManager::GetMD5ForFile(file)));
-			AddBMSTotal(table, md5, total, true, 0, file, "");
-			Locator::getLogger()->info("BMS TOTAL: {} has #TOTAL {}", file,
-									   total);
+			AddBMSTotal(table, md5, total, true, rank, defexrank, 0, file, "");
+			Locator::getLogger()->info(
+			  "BMS TOTAL: {} has #TOTAL {} #RANK {} #DEFEXRANK {}",
+			  file,
+			  total,
+			  rank,
+			  defexrank);
 		}
 	}
 
 	for (const auto& [md5, e] : table.byHash) {
-		if (e.total <= 0.f)
+		if (e.total <= 0.f && e.rank < 0 && e.defexrank <= 0.f)
 			continue;
 		if (!e.stem.empty())
 			table.byStem[e.stem].push_back(&e);
@@ -458,23 +518,32 @@ GetBMSTotalTable()
 	return table;
 }
 
-// One TOTAL out of the charts sharing a name. When they disagree, pick the
-// one whose note count fits ours best: converts lose the scratch lane, so a
-// bms chart can't have fewer notes than our chart.
-const BMSTotalEntry*
-PickBMSTotal(const std::vector<const BMSTotalEntry*>& candidates, int notes)
+// One value (TOTAL, RANK) out of the charts sharing a name, -1 when none of
+// them has it. When they disagree, pick the one whose note count fits ours
+// best: converts lose the scratch lane, so a bms chart can't have fewer notes
+// than our chart.
+template<typename Get>
+float
+PickBMSValue(const std::vector<const BMSTotalEntry*>& candidates,
+			 int notes,
+			 Get get)
 {
-	if (candidates.empty())
-		return nullptr;
-	const auto* best = candidates.front();
+	const BMSTotalEntry* best = nullptr;
 	auto same = true;
-	for (const auto* c : candidates)
-		same = same && c->total == best->total;
+	for (const auto* c : candidates) {
+		if (get(*c) < 0.f)
+			continue;
+		if (best == nullptr)
+			best = c;
+		same = same && get(*c) == get(*best);
+	}
+	if (best == nullptr)
+		return -1.f;
 	if (same)
-		return best;
+		return get(*best);
 	auto bestScore = std::numeric_limits<int>::max();
 	for (const auto* c : candidates) {
-		if (c->notes <= 0)
+		if (c->notes <= 0 || get(*c) < 0.f)
 			continue;
 		const auto score =
 		  std::abs(c->notes - notes) + (c->notes < notes ? 100000 : 0);
@@ -483,14 +552,22 @@ PickBMSTotal(const std::vector<const BMSTotalEntry*>& candidates, int notes)
 			best = c;
 		}
 	}
-	return best;
+	return get(*best);
 }
-} // namespace
 
+// A chart's header value (tag "TOTAL" or "RANK"), -1 when unknown. The bms
+// file's own header first, then its md5 in the json, then the tag written into
+// a converted .sm/.ssc, then the json by file name and by title. get reads the
+// value off a json entry (-1 unknown) and valid says whether a header value
+// counts.
+template<typename Get, typename Valid>
 float
-LifeMeterBar::FindBMSTotal(const Song* song,
-						   const Steps* steps,
-						   std::string& source)
+FindBMSValue(const Song* song,
+			 const Steps* steps,
+			 const std::string& tag,
+			 std::string& source,
+			 Get get,
+			 Valid valid)
 {
 	auto& table = GetBMSTotalTable();
 	const auto notes =
@@ -503,10 +580,10 @@ LifeMeterBar::FindBMSTotal(const Song* song,
 		const auto ext = make_lower(GetExtension(fn));
 		// charts loaded from a bms file: header first, then md5 of the file
 		if (ext == "bms" || ext == "bme" || ext == "bml" || ext == "pms") {
-			const auto total = ReadBMSHeaderTotal(fn);
-			if (total > 0.f) {
-				source = "#TOTAL";
-				return total;
+			const auto value = ReadBMSHeaderValue(fn, tag);
+			if (valid(value)) {
+				source = "#" + tag;
+				return value;
 			}
 			static std::unordered_map<std::string, std::string> md5Cache;
 			auto cached = md5Cache.find(fn);
@@ -518,14 +595,14 @@ LifeMeterBar::FindBMSTotal(const Song* song,
 							   CryptManager::GetMD5ForFile(fn))))
 					.first;
 			const auto hit = table.byHash.find(cached->second);
-			if (hit != table.byHash.end() && hit->second.total > 0.f) {
+			if (hit != table.byHash.end() && get(hit->second) >= 0.f) {
 				source = "json md5";
-				return hit->second.total;
+				return get(hit->second);
 			}
 		}
 	}
 
-	// converts that carry #TOTAL in the .sm/.ssc itself
+	// converts that carry the tag in the .sm/.ssc itself
 	if (song != nullptr) {
 		std::vector<std::string> files;
 		if (steps != nullptr) {
@@ -537,10 +614,10 @@ LifeMeterBar::FindBMSTotal(const Song* song,
 			FILEMAN->GetDirListingWithMultipleExtensions(
 			  song->GetSongDir(), { "ssc", "sm" }, files, ONLY_FILE, true);
 		for (const auto& file : files) {
-			const auto total = ReadSMTotal(file);
-			if (total > 0.f) {
-				source = "#TOTAL";
-				return total;
+			const auto value = ReadSMValue(file, tag);
+			if (valid(value)) {
+				source = "#" + tag;
+				return value;
 			}
 		}
 	}
@@ -558,20 +635,84 @@ LifeMeterBar::FindBMSTotal(const Song* song,
 				continue;
 			const auto hit = table.byStem.find(name);
 			if (hit != table.byStem.end()) {
-				source = "json file";
-				return PickBMSTotal(hit->second, notes)->total;
+				const auto value = PickBMSValue(hit->second, notes, get);
+				if (value >= 0.f) {
+					source = "json file";
+					return value;
+				}
 			}
 		}
 		for (const auto& title :
 			 { song->m_sMainTitle + song->m_sSubTitle, song->m_sMainTitle }) {
 			const auto hit = table.byTitle.find(NormalizeBMSTitle(title));
 			if (hit != table.byTitle.end()) {
-				source = "json title";
-				return PickBMSTotal(hit->second, notes)->total;
+				const auto value = PickBMSValue(hit->second, notes, get);
+				if (value >= 0.f) {
+					source = "json title";
+					return value;
+				}
 			}
 		}
 	}
-	return 0.f;
+	return -1.f;
+}
+} // namespace
+
+float
+LifeMeterBar::FindBMSTotal(const Song* song,
+						   const Steps* steps,
+						   std::string& source)
+{
+	const auto total = FindBMSValue(
+	  song,
+	  steps,
+	  "TOTAL",
+	  source,
+	  [](const BMSTotalEntry& e) { return e.total > 0.f ? e.total : -1.f; },
+	  [](float v) { return v > 0.f; });
+	return std::max(total, 0.f);
+}
+
+int
+LifeMeterBar::GetBMSRank(const Song* song,
+						 const Steps* steps,
+						 std::string& source)
+{
+	// #DEFEXRANK wins over #RANK. It is a percent of NORMAL's windows; nanasi
+	// puts RANK 0 .. 4 at 48, 64, 100, 120 and 160. We only have LR2's four
+	// ranks, so it takes the nearest one.
+	const auto defexrank = FindBMSValue(
+	  song,
+	  steps,
+	  "DEFEXRANK",
+	  source,
+	  [](const BMSTotalEntry& e) {
+		  return e.defexrank > 0.f ? e.defexrank : -1.f;
+	  },
+	  [](float v) { return v > 0.f; });
+	if (defexrank > 0.f) {
+		source = ssprintf("#DEFEXRANK %g (%s)", defexrank, source.c_str());
+		if (defexrank < 56.f)
+			return 0;
+		if (defexrank < 82.f)
+			return 1;
+		if (defexrank < 110.f)
+			return 2;
+		return 3;
+	}
+
+	const auto rank = FindBMSValue(
+	  song,
+	  steps,
+	  "RANK",
+	  source,
+	  [](const BMSTotalEntry& e) { return static_cast<float>(e.rank); },
+	  [](float v) { return v >= 0.f; });
+	if (rank < 0.f) {
+		source = "none";
+		return -1;
+	}
+	return static_cast<int>(rank);
 }
 
 // The chart's TOTAL when we know it (BMS header or Songs/total json).

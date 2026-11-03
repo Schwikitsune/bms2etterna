@@ -39,6 +39,35 @@ function getBMSOptionName(kind, i)
 	return THEME:GetString("OptionNames", bmsOptionNames[kind][i or getBMSOption(kind)])
 end
 
+-- judge rank index (1 Easy .. 4 VeryHard) from the selected chart's own #RANK,
+-- nil when it has none. Gameplay uses it over the picked rank, like LR2.
+function getBMSChartJudgeRank(steps)
+	steps = steps or GAMESTATE:GetCurrentSteps()
+	if not steps or not steps.GetBMSRank then
+		return nil
+	end
+	local rank = steps:GetBMSRank()
+	if not rank then
+		return nil
+	end
+	-- bms #RANK: 0 VERY HARD, 1 HARD, 2 NORMAL, 3 EASY, 4 VERY EASY
+	return ({4, 3, 2, 1})[rank + 1] or 1
+end
+
+-- judge rank the selected chart will be played on
+function getBMSEffectiveJudgeRank()
+	return getBMSChartJudgeRank() or getBMSOption("JudgeRank")
+end
+
+-- "Normal", or "Normal (chart)" when the chart's #RANK overrides the picker
+function getBMSJudgeRankText()
+	local chart = getBMSChartJudgeRank()
+	if chart then
+		return getBMSOptionName("JudgeRank", chart) .. " (" .. THEME:GetString("GeneralInfo", "BMSChartRank") .. ")"
+	end
+	return getBMSOptionName("JudgeRank")
+end
+
 local function setBMSOption(kind, i)
 	local e = bmsOptionEnums[kind]
 	local ps = GAMESTATE:GetPlayerState()
@@ -196,10 +225,10 @@ end
 
 -- LR2 windows in ms (PGREAT, GREAT, GOOD, BAD), same as Player.cpp LR2_WINDOWS
 local bmsWindowsMs = {
-	{21, 60, 120, 180},
-	{18, 40, 100, 180},
-	{15, 30, 60, 180},
-	{8, 24, 40, 180},
+	{21, 60, 120, 200},
+	{18, 40, 100, 200},
+	{15, 30, 60, 200},
+	{8, 24, 40, 200},
 }
 function getBMSWindowsMs(rank)
 	return bmsWindowsMs[rank] or bmsWindowsMs[1]

@@ -430,7 +430,7 @@ t[#t + 1] = Def.ActorFrame {
 			self:y(AvatarY + 41 - (online and 18 or 0))
 			-- 7k uses the LR2 judge rank instead of the etterna judge
 			if hideMSD() then
-				self:settextf("%s: %s", translated_info["JudgeRank"], getBMSOptionName("JudgeRank"))
+				self:settextf("%s: %s", translated_info["JudgeRank"], getBMSJudgeRankText())
 				return
 			end
 			self:settextf("%s: %s", translated_info["Judge"], GetTimingDifficulty())

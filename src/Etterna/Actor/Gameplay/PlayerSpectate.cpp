@@ -775,7 +775,7 @@ PlayerSpectate::Step(int col,
 	}
 
 	// Check for tap
-	static const auto StepSearchDistance = GetMaxStepDistanceSeconds();
+	const auto StepSearchDistance = GetMaxStepDistanceSeconds();
 	const auto iStepSearchRows =
 	  std::max(BeatToNoteRow(m_Timing->GetBeatFromElapsedTime(
 				 fPositionSeconds + StepSearchDistance)) -

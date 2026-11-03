@@ -17,6 +17,10 @@ local forcedWindow = false
 local is7k = hideMSD()
 local bmsWindows = getBMSWindowsMs(1)
 local bmsRankName = ""
+-- LR2 BAD reaches 200ms, the plot has to show it
+if is7k then
+	maxOffset = 200
+end
 local function setBMSScore(score)
 	if not is7k then return end
 	bmsWindows = getBMSWindowsMs(getBMSJudgeRankIndexFromScore(score))
@@ -268,7 +272,7 @@ local o = Def.ActorFrame {
 			tso = tst[GetTimingDifficulty()]
 		end
 		if params.Name ~= "ResetJudge" and params.Name ~= "PrevJudge" and params.Name ~= "NextJudge" and params.Name ~= "ToggleHands" then return end
-		maxOffset = math.max(180, 180 * tso)
+		maxOffset = is7k and 200 or math.max(180, 180 * tso)
 		MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 	end,
 	ForceWindowMessageCommand = function(self, params)

@@ -5,6 +5,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   linux-x64:
     name: Linux ${{matrix.cfg.archstr}} (${{matrix.cfg.cxx}})

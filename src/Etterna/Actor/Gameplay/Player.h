@@ -133,6 +133,8 @@ class Player : public ActorFrame
 	}
 	void SetPaused(bool bPaused) { m_bPaused = bPaused; }
 
+	// late edge of the BAD window, 200ms on 7k (LR2), else 180ms
+	static auto GetMissWindowSeconds() -> float;
 	static auto GetMaxStepDistanceSeconds() -> float;
 	static auto GetWindowSeconds(TimingWindow tw) -> float;
 	static auto GetWindowSecondsCustomScale(TimingWindow tw,

@@ -11,6 +11,7 @@
 #include "Etterna/Singletons/GameSoundManager.h"
 #include "Etterna/Singletons/GameState.h"
 #include "Etterna/Actor/Gameplay/LifeMeter.h"
+#include "Etterna/Actor/Gameplay/LifeMeterBar.h"
 #include "Etterna/Models/Lua/LuaBinding.h"
 #include "Etterna/Singletons/LuaManager.h"
 #include "Etterna/Models/Misc/LyricsLoader.h"
@@ -565,6 +566,47 @@ ScreenGameplay::ReloadCurrentSong()
 	LoadNextSong();
 }
 
+// 7k plays on the chart's own #RANK, like LR2. The judge rank picked in
+// song select is only for charts that don't have one. The rank goes into the
+// stage options, so the score saves the rank it was played on. Replays keep
+// the rank from their score.
+static void
+ApplyBMSChartRank(const Steps* pSteps)
+{
+	const auto* style = GAMESTATE->GetCurrentStyle(PLAYER_1);
+	if (style == nullptr || style->m_iColsPerPlayer != 7 ||
+		GamePreferences::m_AutoPlay == PC_REPLAY ||
+		GAMESTATE->m_pPlayerState->m_PlayerController == PC_REPLAY ||
+		GAMESTATE->m_pPlayerState->m_PlayerController == PC_SPECTATE ||
+		GamePreferences::m_AutoPlay == PC_SPECTATE)
+		return;
+
+	auto& opts = GAMESTATE->m_pPlayerState->m_PlayerOptions;
+	auto judgeRank = opts.GetPreferred().m_BMSJudgeRank;
+	std::string source;
+	switch (LifeMeterBar::GetBMSRank(GAMESTATE->m_pCurSong, pSteps, source)) {
+		case 0:
+			judgeRank = BMSJudgeRank_VeryHard;
+			break;
+		case 1:
+			judgeRank = BMSJudgeRank_Hard;
+			break;
+		case 2:
+			judgeRank = BMSJudgeRank_Normal;
+			break;
+		case 3:
+		case 4: // VERY EASY, wider than LR2's EASY, which is the widest we have
+			judgeRank = BMSJudgeRank_Easy;
+			break;
+		default: // no #RANK, keep the picked one
+			break;
+	}
+	Locator::getLogger()->info("BMS judge rank: {} ({})",
+							   BMSJudgeRankToString(judgeRank),
+							   source);
+	PO_GROUP_ASSIGN(opts, ModsLevel_Stage, m_BMSJudgeRank, judgeRank);
+}
+
 void
 ScreenGameplay::LoadNextSong()
 {
@@ -610,6 +652,8 @@ ScreenGameplay::LoadNextSong()
 
 	Steps* pSteps = GAMESTATE->m_pCurSteps;
 	++GetPlayerInfo()->GetPlayerStageStats()->m_iStepsPlayed;
+
+	ApplyBMSChartRank(pSteps);
 
 	ASSERT(GAMESTATE->m_pCurSteps != nullptr);
 	if (GetPlayerInfo()->m_ptextStepsDescription != nullptr) {

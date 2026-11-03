@@ -683,7 +683,7 @@ p[#p + 1] = Img("7keys_info.png", 30, 222, 384, 57)
 for i = 1, 4 do
 	p[#p + 1] = Img("jud_" .. i .. ".png", 223, 573, 78, 22, {
 		RefreshCommand = function(self)
-			self:visible(getBMSOption("JudgeRank") == i)
+			self:visible(getBMSEffectiveJudgeRank() == i)
 		end,
 	})
 end
