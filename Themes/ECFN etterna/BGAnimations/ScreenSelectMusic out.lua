@@ -36,8 +36,10 @@ t[#t + 1] = Def.ActorFrame {
 	Def.Quad {
 		InitCommand = function(self)
 			self:zoomto(SCREEN_WIDTH,80)
-			self:diffusetopedge(Brightness(getMainColor("tabs"), 0.45))
-			self:diffusebottomedge(Brightness(getMainColor("tabs"), 0.15))
+			-- 7k panels have see-through "tabs", the transition keeps a solid navy
+			local c = hideMSD() and color("#0b1626ff") or getMainColor("tabs")
+			self:diffusetopedge(Brightness(c, 0.45))
+			self:diffusebottomedge(Brightness(c, 0.15))
 		end,
 	},
 	Def.Quad {

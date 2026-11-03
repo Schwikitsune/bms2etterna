@@ -110,7 +110,7 @@ jobs:
           echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
       
       - name: Upload Symbols to Crash Server
-        if: ${{ matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
+        if: ${{ github.repository == 'etternagame/etterna' && matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
         run: symupload ${{github.workspace}}/sym/Etterna.sym "https://crash.etterna.dev/api/symbol/upload?api_key=${{secrets.CRASHSERVER_API_KEY}}&version=${{steps.get_version.outputs.VERSION}}"
 
       - name: Upload files to Release
@@ -223,7 +223,7 @@ jobs:
           echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
 
       - name: Upload Symbols to Crash Server
-        if: ${{ matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
+        if: ${{ github.repository == 'etternagame/etterna' && matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
         run: symupload ${{github.workspace}}/main/Etterna.sym "https://crash.etterna.dev/api/symbol/upload?api_key=${{secrets.CRASHSERVER_API_KEY}}&version=${{ steps.get_version.outputs.VERSION }}"
 
       - name: Upload files to Release
@@ -331,7 +331,7 @@ jobs:
           echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
 
       - name: Upload Symbols to Crash Server
-        if: ${{ matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
+        if: ${{ github.repository == 'etternagame/etterna' && matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
         run: symupload ${{github.workspace}}/main/Etterna.sym "https://crash.etterna.dev/api/symbol/upload?api_key=${{secrets.CRASHSERVER_API_KEY}}&version=${{ steps.get_version.outputs.VERSION }}"
 
       - name: Upload files to Release
@@ -442,7 +442,7 @@ jobs:
           echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
 
       - name: Upload Symbols to Crash Server
-        if: ${{ matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
+        if: ${{ github.repository == 'etternagame/etterna' && matrix.cfg.dist && github.event_name == 'release' && github.event.action == 'published' }}
         run: symupload ${{github.workspace}}/main/Etterna.sym "https://crash.etterna.dev/api/symbol/upload?api_key=${{secrets.CRASHSERVER_API_KEY}}&version=${{ steps.get_version.outputs.VERSION }}"
 
       - name: Upload files to Release
@@ -566,7 +566,7 @@ jobs:
         run: $tag="${{ github.ref }}".Split('/')[-1]; echo "::set-output name=VERSION::$tag"
 
       - name: Upload Symbols to Crash Server
-        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        if: ${{ github.repository == 'etternagame/etterna' && github.event_name == 'release' && github.event.action == 'published' }}
         run: curl --request POST -F symbol_file=@${{github.workspace}}/main/Etterna.sym "https://crash.etterna.dev/api/symbol/upload?api_key=${{ secrets.CRASHSERVER_API_KEY }}&version=${{ steps.get_version.outputs.VERSION }}"
 
       - name: Upload files to Release

@@ -30,6 +30,49 @@ local headeroffY = 10
 
 local selectedrateonly
 
+-- 7k: ECFN pictures for the DJ level and the clear name, gray cells behind
+-- the buttons
+local ecfn = hideMSD()
+local ecfnDir = THEME:GetCurrentThemeDirectory()
+if ecfnDir:sub(1, 1) ~= "/" then
+	ecfnDir = "/" .. ecfnDir
+end
+ecfnDir = ecfnDir .. "BGAnimations/ScreenSelectMusic decorations/ecfn/"
+-- 7k: a button in the look of the gray ECFN windows (dark outline, gray
+-- gradient, light top edge), centered on its frame
+local function ecfnButtonBG(w, h)
+	return Def.ActorFrame {
+		InitCommand = function(self)
+			self:visible(hideMSD())
+		end,
+		Def.Quad {
+			InitCommand = function(self)
+				self:zoomto(w + 2, h + 2):diffuse(color("0.05,0.06,0.07,0.9"))
+			end,
+		},
+		Def.Quad {
+			InitCommand = function(self)
+				self:zoomto(w, h):diffusetopedge(color("0.36,0.39,0.45,0.95")):diffusebottomedge(color("0.17,0.19,0.23,0.95"))
+			end,
+		},
+		Def.Quad {
+			InitCommand = function(self)
+				self:y(-h / 2 + 0.5):zoomto(w, 1):diffuse(color("0.70,0.74,0.82,0.7"))
+			end,
+		},
+	}
+end
+local function ecfnButtonCell(x, y, w, h, needReplay)
+	local f = ecfnButtonBG(w, h)
+	f.InitCommand = function(self)
+		self:xy(x + w / 2, y):visible(false)
+	end
+	f.DisplayCommand = function(self)
+		self:visible(ecfn and (hasReplayData or not needReplay))
+	end
+	return f
+end
+
 local judges = {
 	"TapNoteScore_W1",
 	"TapNoteScore_W2",
@@ -149,7 +192,8 @@ local ret = Def.ActorFrame {
 				sd:visible(false)
 			else
 				sd.nested = false
-				sd:visible(true)
+				-- 7k shows the chart list only next to the ECFN panels
+				sd:visible(not hideMSD())
 			end
 			if collapsed then -- expand if collaped
 				self:queuecommand("Expand")
@@ -177,7 +221,7 @@ local ret = Def.ActorFrame {
 			if nestedTab == 1 then
 				self:GetChild("ScoreDisplay"):visible(false)
 				self:GetChild("LocalScores"):visible(true)
-				sd:visible(true)
+				sd:visible(not hideMSD())
 			else
 				updateLeaderBoardForCurrentChart()
 				self:GetChild("ScoreDisplay"):visible(true)
@@ -401,8 +445,32 @@ local l = Def.ActorFrame {
 			self:y(20):zoom(0.65):halign(0):maxwidth(60 / 0.65):settext("")
 		end,
 		DisplayCommand = function(self)
+			if ecfn then
+				self:settext("")
+				return
+			end
 			self:settext(THEME:GetString("Grade", ToEnumShortString(score:GetWifeGrade())))
 			self:diffuse(getGradeColor(score:GetWifeGrade()))
+		end
+	},
+	Def.Sprite {
+		Texture = ecfnDir .. "rank_b 1x8.png",
+		InitCommand = function(self)
+			self:animate(false):halign(0):valign(0.5):y(20):zoomto(61, 19.5):visible(false)
+		end,
+		DisplayCommand = function(self)
+			if not ecfn then
+				return
+			end
+			-- DJ levels are ninths of the max EX score, the sheet goes F to AAA
+			local r = getBMSScoreRate(score)
+			local level = 0
+			for i = 1, 7 do
+				if r >= i / 9 + 1 / 9 then
+					level = i
+				end
+			end
+			self:visible(true):setstate(level)
 		end
 	},
 	-- Wife display
@@ -460,7 +528,8 @@ local l = Def.ActorFrame {
 			self:xy(65, 43):zoom(0.5):halign(0):settext("")
 		end,
 		DisplayCommand = function(self)
-			if score:GetWifeScore() == 0 then
+			-- 7k has no MSD, the skillset would sit on the clear type
+			if score:GetWifeScore() == 0 or hideMSD() then
 				self:settext("")
 			else
 				local ss = GAMESTATE:GetCurrentSteps():GetRelevantSkillsetsByMSDRank(getCurRateValue(), 1)
@@ -478,8 +547,23 @@ local l = Def.ActorFrame {
 			self:y(44):zoom(0.5):halign(0):settext(""):diffuse(color(colorConfig:get_data().clearType["NoPlay"]))
 		end,
 		DisplayCommand = function(self)
+			if ecfn then
+				self:settext("")
+				return
+			end
 			self:settext(getClearTypeFromScore(pn, score, 0))
 			self:diffuse(getClearTypeFromScore(pn, score, 2))
+		end
+	},
+	Def.Sprite {
+		Texture = ecfnDir .. "state_clear 3x11.png",
+		InitCommand = function(self)
+			self:animate(false):halign(0):valign(0.5):y(44):zoomto(72, 12.6):visible(false)
+		end,
+		DisplayCommand = function(self)
+			if ecfn then
+				self:visible(true):setstate(getBMSLampFrame(score) * 3)
+			end
 		end
 	},
 	LoadFont("Common Normal") .. {
@@ -573,6 +657,10 @@ local l = Def.ActorFrame {
 			self:xy(frameX + offsetX + 55,frameHeight - headeroffY - 50 - offsetY):zoom(0.4):halign(0.5):settext("")
 		end,
 		DisplayCommand = function(self)
+			if ecfn then
+				self:settext("")
+				return
+			end
 			if score:GetChordCohesion() then
 				self:settextf("%s: %s", translated_info["ChordCohesion"], translated_info["Yes"])
 				self:diffuse(1,0,0,1)
@@ -635,6 +723,13 @@ local function makeJudge(index, judge)
 			self:y(129 + ((index - 1) * 18))
 		end
 	}
+	if ecfn then
+		t[#t + 1] = Def.Quad {
+			InitCommand = function(self)
+				self:halign(0):x(-4):zoomto(175, 17):diffuse(color("#b8c0d0")):diffusealpha(index % 2 == 0 and 0.06 or 0.14)
+			end,
+		}
+	end
 
 	--labels
 	t[#t + 1] = LoadFont("Common Normal") .. {
@@ -680,10 +775,18 @@ local function makeJudge(index, judge)
 	return t
 end
 
-for i = 1, #judges do
-	l[#l + 1] = makeJudge(i, judges[i])
+-- 7k: PGREAT GREAT GOOD BAD POOR, LR2 has no second BAD (W5 never happens)
+-- and no OK/NG for long notes
+local shownJudges = judges
+if hideMSD() then
+	shownJudges = {"TapNoteScore_W1", "TapNoteScore_W2", "TapNoteScore_W3", "TapNoteScore_W4", "TapNoteScore_Miss"}
+end
+for i = 1, #shownJudges do
+	l[#l + 1] = makeJudge(i, shownJudges[i])
 end
 
+l[#l + 1] = ecfnButtonCell(-5, frameHeight - headeroffY - 31 - offsetY, 128, 16, true)
+l[#l + 1] = ecfnButtonCell(-5, frameHeight - headeroffY - 15 - offsetY, 128, 16, true)
 l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
 	Name = "Score",
 	InitCommand = function(self)
@@ -759,6 +862,7 @@ l[#l + 1] = Def.ActorFrame {
 			self:x(6):y(37):zoom(0.9)
 		end
 	end,
+	ecfnButtonCell((frameWidth - offsetX - frameX) / 2.1 - 72.5, frameHeight - headeroffY - 17 - offsetY, 145, 21, true),
 	UIElements.QuadButton(1, 1) .. {
 		Name = "EvalViewQuad",
 		InitCommand = function(self)
@@ -771,7 +875,7 @@ l[#l + 1] = Def.ActorFrame {
 			end
 		end,
 		DisplayCommand = function(self)
-			if hasReplayData then
+			if hasReplayData and not ecfn then
 				self:diffusealpha(0.3)
 			else
 				self:diffusealpha(0)
@@ -819,6 +923,10 @@ l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		self:diffuse(getMainColor("positive"))
 	end,
 	DisplayCommand = function(self)
+		if ecfn then
+			self:settext("")
+			return
+		end
 		self:settext(translated_info["UploadReplay"])
 	end,
 	MouseOverCommand = function(self)
@@ -845,6 +953,10 @@ l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		self:diffuse(getMainColor("positive"))
 	end,
 	DisplayCommand = function(self)
+		if ecfn then
+			self:settext("")
+			return
+		end
 		self:settext(translated_info["UploadAllScoreChart"])
 	end,
 	MouseOverCommand = function(self)
@@ -870,6 +982,10 @@ l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		self:diffuse(getMainColor("positive"))
 	end,
 	DisplayCommand = function(self)
+		if ecfn then
+			self:settext("")
+			return
+		end
 		self:settext(translated_info["UploadAllScorePack"])
 	end,
 	MouseOverCommand = function(self)
@@ -895,6 +1011,10 @@ l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		self:diffuse(getMainColor("positive"))
 	end,
 	DisplayCommand = function(self)
+		if ecfn then
+			self:settext("")
+			return
+		end
 		self:settext(translated_info["UploadAllScore"])
 	end,
 	MouseOverCommand = function(self)

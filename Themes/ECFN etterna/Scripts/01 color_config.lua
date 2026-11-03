@@ -147,7 +147,20 @@ function getDefaultColorForCurColor()
 	return defaultConfig[curColor[1]][curColor[2]]
 end
 
+-- 7k uses the ECFN skin's grays and blue instead of the configured colors
+local ecfnMainColors = {
+	highlight = "#3f9fff",
+	frames = "#606878",
+	tabs = "#00000000",
+	enabled = "#40e060",
+	disabled = "#5a6478",
+	negative = "#ff7070",
+	positive = "#e6ecf5",
+}
 function getMainColor(type)
+	if hideMSD and hideMSD() and ecfnMainColors[type] then
+		return color(ecfnMainColors[type])
+	end
 	return color(colorConfig:get_data().main[type])
 end
 

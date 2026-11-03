@@ -27,7 +27,8 @@ local sd = Def.ActorFrame {
 	end,
 	TabChangedMessageCommand = function(self, params)
 		self:finishtweening()
-		if getTabIndex() < 3 and GAMESTATE:GetCurrentSong() then
+		-- 7k only shows it next to the ECFN panels on the first tab
+		if getTabIndex() < 3 and GAMESTATE:GetCurrentSong() and not (hideMSD() and getTabIndex() ~= 0) then
 			-- dont display this if the score nested tab is already online
 			-- prevents repeat 3 presses to break the display
 			-- (let page 2 handle this specifically)
@@ -52,7 +53,7 @@ local sd = Def.ActorFrame {
 			-- if in online scores tab it still pops up for 1 frame
 			-- so the bug fixed in the above command makes a return
 			-- how sad
-			if getTabIndex() < 3 then
+			if getTabIndex() < 3 and not (hideMSD() and getTabIndex() ~= 0) then
 				self:playcommand("On")
 			end
 			self:playcommand("UpdateStepsRows")

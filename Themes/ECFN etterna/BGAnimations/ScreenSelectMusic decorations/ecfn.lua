@@ -3,7 +3,7 @@
 -- The skin counts y from the bottom, the numbers here are already the top
 -- edges (1080 - y - h). The wheel is the engine's (metrics.ini, Graphics/
 -- MusicWheelItem Song NormalPart.lua), the Til Death tabs stay usable and
--- every tab but the first one hides the left panels.
+-- the other tabs slide their windows over the panels.
 
 -- the theme directory comes without the leading slash, and a path without it
 -- is taken as relative to this file
@@ -371,8 +371,8 @@ local function Num(file, x, y, gw, gh, digits, get, opts)
 end
 
 -- text fitted to a height in skin pixels, y is its middle
-local function Text(x, y, h, align, maxw, get, c)
-	return LoadFont("Common Normal") .. {
+local function Text(x, y, h, align, maxw, get, c, font)
+	return LoadFont(font or "ECFN Normal") .. {
 		InitCommand = function(self)
 			self:xy(x, y):halign(align):valign(0.5)
 			self:settext("Ag")
@@ -433,7 +433,10 @@ local function Click(x, y, w, h, onClick)
 			self:halign(0):valign(0):xy(x, y):zoomto(w, h):diffusealpha(0)
 		end,
 		MouseDownCommand = function(self, params)
-			onClick(params.event)
+			-- not through a tab window lying over it
+			if getTabIndex() == 0 then
+				onClick(params.event)
+			end
 		end,
 	}
 end
@@ -518,6 +521,91 @@ do
 	t[#t + 1] = slider
 end
 
+local tabWindows
+-- the Til Death tab panels sit on gray ECFN windows (the SCORE DATA window
+-- stretched without its label), their own backgrounds are see-through on 7k
+-- (getMainColor "tabs"). The window header gets the tab's name where the tab
+-- leaves room for it.
+do
+	local wide = SCREEN_WIDTH * 0.56
+	local narrow = capWideScale(360, 400)
+	local panels = {
+		[2] = {"win_scores", 10, 40, wide, 368},
+		[4] = {"win_profile", 10, 45, narrow, 350, "PROFILE DATA"},
+		[6] = {"win_goals", 10, 50, wide, 352, "GOALS"},
+		[7] = {"win_profile", 10, 45, narrow, 350, "PLAYLISTS"},
+		[9] = {"win_profile", 10, 45, narrow, 350, "TAGS"},
+	}
+	local f = Def.ActorFrame {
+		BeginCommand = function(self)
+			self:playcommand("Place")
+		end,
+		TabChangedMessageCommand = function(self)
+			self:playcommand("Place")
+		end,
+	}
+	-- a dark backing under the window so the panels behind only show faintly
+	f[#f + 1] = Def.Quad {
+		InitCommand = function(self)
+			self:visible(false):halign(0):valign(0)
+		end,
+		PlaceCommand = function(self)
+			local r = panels[getTabIndex()]
+			if r then
+				self:stoptweening():visible(true):zoomto(r[4] + 4, r[5] + 4):xy(r[2] - 2 - 500, r[3] - 2)
+				self:diffuse(color("0.05,0.06,0.08,0")):bouncebegin(0.2):x(r[2] - 2):diffusealpha(0.82)
+			elseif self:GetVisible() then
+				self:stoptweening():bouncebegin(0.2):addx(-500):diffusealpha(0)
+				self:sleep(0.04):queuecommand("Hide")
+			end
+		end,
+		HideCommand = function(self)
+			self:visible(false)
+		end,
+	}
+	for _, name in ipairs({"win_scores", "win_search", "win_profile", "win_goals"}) do
+		f[#f + 1] = Def.Sprite {
+			Texture = dir .. name .. ".png",
+			-- slides in and out with the Til Death panel on it (bouncebegin 0.2
+			-- from 500 to the left)
+			PlaceCommand = function(self)
+				local r = panels[getTabIndex()]
+				if r and r[1] == name then
+					self:stoptweening():visible(true):halign(0):valign(0)
+					self:zoomto(r[4] + 8, r[5] + 8):xy(r[2] - 4 - 500, r[3] - 4):diffusealpha(0)
+					self:bouncebegin(0.2):x(r[2] - 4):diffusealpha(1)
+				elseif self:GetVisible() then
+					self:stoptweening():bouncebegin(0.2):addx(-500):diffusealpha(0)
+					self:sleep(0.04):queuecommand("Hide")
+				end
+			end,
+			HideCommand = function(self)
+				self:visible(false)
+			end,
+			InitCommand = function(self)
+				self:visible(false)
+			end,
+		}
+	end
+	f[#f + 1] = LoadFont("Common Normal") .. {
+		InitCommand = function(self)
+			self:halign(0):valign(0.5):zoom(0.3):diffuse(color("#ffffff"))
+			self:shadowlength(1):shadowcolor(color("0,0,0,1"))
+		end,
+		PlaceCommand = function(self)
+			local r = panels[getTabIndex()]
+			self:stoptweening()
+			if r and r[6] then
+				self:visible(true):xy(r[2] + 2 - 500, r[3] + 1):settext(r[6]):diffusealpha(0)
+				self:bouncebegin(0.2):x(r[2] + 2):diffusealpha(1)
+			else
+				self:visible(false)
+			end
+		end,
+	}
+	tabWindows = f
+end
+
 -- the panels, scaled on an inner frame since the screen may move the decorations
 local p = Def.ActorFrame {
 	Name = "Panels",
@@ -528,7 +616,7 @@ local p = Def.ActorFrame {
 	-- left side like in Til Death, the panels hide while it is up
 	BeginCommand = function(self)
 		self.preview = false
-		self:visible(getTabIndex() == 0)
+		self:visible(true)
 	end,
 	ChartPreviewOnMessageCommand = function(self)
 		self.preview = true
@@ -536,13 +624,14 @@ local p = Def.ActorFrame {
 	end,
 	ChartPreviewOffMessageCommand = function(self)
 		self.preview = false
-		self:visible(getTabIndex() == 0)
+		self:visible(true)
 	end,
 	OnCommand = function(self)
 		self:xy((SCREEN_WIDTH - W * scale) / 2, shiftY * scale):zoom(scale)
 	end,
+	-- the tab windows are see-through and slide over these, they stay up
 	TabChangedMessageCommand = function(self)
-		self:visible(getTabIndex() == 0 and not self.preview)
+		self:visible(not self.preview)
 	end,
 }
 t[#t + 1] = p
@@ -700,9 +789,10 @@ end), color("#ffc040"))
 p[#p + 1] = Text(451, 284, 22, 0, 640, songOnly(function()
 	return data.song:GetGenre()
 end))
-p[#p + 1] = Text(451, 334, 46, 0, 680, songOnly(function()
-	return data.song:GetDisplayMainTitle()
-end))
+p[#p + 1] = Text(451, 338, 38, 0, 680, songOnly(function()
+	-- one line, some titles carry line breaks
+	return (data.song:GetDisplayMainTitle():gsub("[\r\n]+", " "))
+end), nil, "ECFN Large")
 p[#p + 1] = Text(451, 382, 22, 0, 640, songOnly(function()
 	return data.song:GetDisplaySubTitle()
 end))
@@ -1044,5 +1134,9 @@ p[#p + 1] = Num("num_pd 11x1.png", 1095, 974, 17, 17, 2, function()
 	local pct = data.clears / data.plays * 100
 	return math.floor((pct - math.floor(pct)) * 100)
 end, {pad = "zero"})
+
+-- the tab windows go over the panels (the Til Death panels on them are in
+-- later decoration files, so they draw on top)
+t[#t + 1] = tabWindows
 
 return t

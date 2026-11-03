@@ -317,6 +317,32 @@ ReadBMSHeaderTotal(const std::string& path)
 	return 0.f;
 }
 
+// #TOTAL:x; written into a converted .sm/.ssc. Read from the file itself,
+// the song cache doesn't keep tags it doesn't know.
+float
+ReadSMTotal(const std::string& path)
+{
+	static std::unordered_map<std::string, float> cache;
+	const auto cached = cache.find(path);
+	if (cached != cache.end())
+		return cached->second;
+	auto total = 0.f;
+	std::vector<std::string> lines;
+	if (GetFileContents(path, lines)) {
+		for (auto line : lines) {
+			TrimLeft(line);
+			if (line.size() > 7 && make_upper(line.substr(0, 7)) == "#TOTAL:") {
+				line = line.substr(7, line.find(';') - 7);
+				Trim(line);
+				total = StringToFloat(line);
+				break;
+			}
+		}
+	}
+	cache[path] = total;
+	return total;
+}
+
 // merge what one source knows about a chart; bms values beat table comments
 void
 AddBMSTotal(BMSTotalTable& table,
@@ -495,6 +521,26 @@ LifeMeterBar::FindBMSTotal(const Song* song,
 			if (hit != table.byHash.end() && hit->second.total > 0.f) {
 				source = "json md5";
 				return hit->second.total;
+			}
+		}
+	}
+
+	// converts that carry #TOTAL in the .sm/.ssc itself
+	if (song != nullptr) {
+		std::vector<std::string> files;
+		if (steps != nullptr) {
+			const auto ext = make_lower(GetExtension(steps->GetFilename()));
+			if (ext == "sm" || ext == "ssc")
+				files.push_back(steps->GetFilename());
+		}
+		if (files.empty())
+			FILEMAN->GetDirListingWithMultipleExtensions(
+			  song->GetSongDir(), { "ssc", "sm" }, files, ONLY_FILE, true);
+		for (const auto& file : files) {
+			const auto total = ReadSMTotal(file);
+			if (total > 0.f) {
+				source = "#TOTAL";
+				return total;
 			}
 		}
 	}

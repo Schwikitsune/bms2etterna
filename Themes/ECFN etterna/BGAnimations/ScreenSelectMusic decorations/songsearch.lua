@@ -78,7 +78,9 @@ local t = Def.ActorFrame {
 		self:visible(false)
 	end,
 	OnCommand = function(self)
-		self:bouncebegin(0.2):xy(0, 0):diffusealpha(1)
+		-- 7k types into the ECFN search box at the top (overlay/ecfnsearch.lua),
+		-- this panel only does the work there
+		self:bouncebegin(0.2):xy(0, 0):diffusealpha(hideMSD() and 0 or 1)
 	end,
 	SetCommand = function(self)
 		self:finishtweening()

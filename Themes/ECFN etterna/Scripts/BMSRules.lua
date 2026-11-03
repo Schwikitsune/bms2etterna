@@ -347,3 +347,36 @@ function getBMSLevelDisplay(song, steps)
 	end
 	return steps:GetMeter(), ecfnDifficultyColors[steps:GetDifficulty()] or 0
 end
+
+-- the 7k song select writes in the ECFN skin's fonts (converted from its
+-- BMFonts into Fonts/ecfn): every "Common Normal" text there becomes
+-- "ECFN Normal" and every "Common Large" one "ECFN Large", wherever it is made
+-- (LoadFont gives a File, the UI elements a Font name)
+local ecfnFontSwap = {["Common Normal"] = "ECFN Normal", ["Common Large"] = "ECFN Large"}
+local ecfnFontPaths
+local function ecfnFonts()
+	if not hideMSD() then
+		return false
+	end
+	local screen = Var("LoadingScreen")
+	return screen == "ScreenSelectMusic"
+end
+local makeBitmapText = Def.BitmapText
+Def.BitmapText = function(t)
+	if ecfnFonts() then
+		if t.Font and ecfnFontSwap[t.Font] then
+			t.Font = ecfnFontSwap[t.Font]
+		elseif t.File then
+			if not ecfnFontPaths then
+				ecfnFontPaths = {
+					[THEME:GetPathF("Common", "Normal")] = THEME:GetPathF("", "ECFN Normal"),
+					[THEME:GetPathF("Common", "Large")] = THEME:GetPathF("", "ECFN Large"),
+				}
+			end
+			t.File = ecfnFontPaths[t.File] or t.File
+		end
+	end
+	-- one call deeper than the actor file, Def looks the caller up by level
+	t._Level = (t._Level or 1) + 1
+	return makeBitmapText(t)
+end

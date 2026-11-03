@@ -59,7 +59,7 @@ if hideMSD() then
                 self:setstate(barFrames[params.Type] or 5)
             end,
         },
-        LoadFont("Common Normal") .. {
+        LoadFont("ECFN Bar") .. {
             Name = "Title",
             InitCommand = function(self)
                 self:halign(0):x(155 * s):y(1 * s)
@@ -79,14 +79,13 @@ if hideMSD() then
         },
         -- folder and sort names: the engine's own texts take the pack colors
         -- (unreadable on the orange bars), metrics hide them on 7k
-        LoadFont("Common Normal") .. {
+        LoadFont("ECFN Bar") .. {
             Name = "Folder",
             InitCommand = function(self)
                 self:halign(0):x(50 * s):y(1 * s)
                 self:settext("Ag")
                 self.z = 26 * s * 1.25 / self:GetHeight()
                 self:zoom(self.z):maxwidth(560 * s / self.z)
-                self:shadowlength(1.5):shadowcolor(color("0,0,0,0.9"))
             end,
             SetCommand = function(self, params)
                 if params.Type == "SectionCollapsed" or params.Type == "SectionExpanded" then

@@ -72,28 +72,55 @@ local t = Def.ActorFrame {
 	-- search box, it shows the search of the Search tab and opens that tab
 	Button("search_ico.png", 1308, 24, 47, 47, function() setTab(3) end),
 	Button("search_window.png", 1364, 24, 332, 47, function() setTab(3) end),
+	-- lit while typing (the Search tab is on), the typed text with a blinking
+	-- caret, Enter keeps the results and Escape drops them
+	Def.Quad {
+		InitCommand = function(self)
+			self:halign(0):valign(0):xy(1364, 24):zoomto(332, 47):diffuse(color("#3f9fff")):diffusealpha(0)
+		end,
+		TabChangedMessageCommand = function(self)
+			self:stoptweening():linear(0.1):diffusealpha(getTabIndex() == 3 and 0.25 or 0)
+		end,
+	},
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
 			self:halign(0):valign(0.5):xy(1378, 47)
 			self:settext("Ag")
 			self.z = 22 / self:GetHeight() * 1.25
 			self:zoom(self.z):maxwidth(300 / self.z)
-			self:settext("search song"):diffuse(color("1,1,1,0.45"))
+			self.str = ""
+			self.caret = true
+			self:playcommand("Show")
+			self:queuecommand("Blink")
+		end,
+		ShowCommand = function(self)
+			if getTabIndex() == 3 then
+				self:settext(self.str .. (self.caret and "_" or " ")):diffuse(color("1,1,1,1"))
+			elseif self.str == "" then
+				self:settext("search song"):diffuse(color("1,1,1,0.45"))
+			else
+				self:settext(self.str):diffuse(color("1,1,1,1"))
+			end
+		end,
+		BlinkCommand = function(self)
+			self.caret = not self.caret
+			self:playcommand("Show")
+			self:sleep(0.4):queuecommand("Blink")
+		end,
+		TabChangedMessageCommand = function(self)
+			self:playcommand("Show")
 		end,
 		UpdateStringMessageCommand = function(self, params)
 			local str = params and params.searchstring
 			if str == nil then
 				return
 			end
-			if str == "" then
-				self:settext("search song"):diffuse(color("1,1,1,0.45"))
-			else
-				self:settext(str):diffuse(color("1,1,1,1"))
-			end
+			self.str = str
+			self:playcommand("Show")
 		end,
 	},
 	Button("text_button.png", 1712, 24, 47, 47, function() setTab(7) end),
-	Button("keyconfig.png", 1767, 24, 47, 47, function() setTab(5) end),
+	Button("keyconfig.png", 1767, 24, 47, 47, function() setTab(4) end),
 	Button("skin_select.png", 1821, 24, 47, 47, function()
 		SCREENMAN:GetTopScreen():OpenOptions()
 	end),

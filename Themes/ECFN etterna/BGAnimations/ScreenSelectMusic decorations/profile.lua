@@ -3,11 +3,66 @@ local showOnline = false
 local recentactive = false
 local percentactive = false
 -- 7k only: best clears, sorted by pack level and then lamp
-local bestactive = false
+local bestactive = hideMSD()
 local bestList = {}
+local buildBestList
+-- 7k has no MSD, its profile page falls back to Best when nothing is picked
 local function BroadcastIfActive(msg)
 	if update then
+		if msg == "UpdateRanking" and hideMSD() and not (recentactive or percentactive or bestactive) then
+			bestactive = true
+			buildBestList()
+		end
 		MESSAGEMAN:Broadcast(msg)
+	end
+end
+
+-- 7k: ECFN style buttons, lit blue when picked
+local ecfnDir = THEME:GetCurrentThemeDirectory()
+if ecfnDir:sub(1, 1) ~= "/" then
+	ecfnDir = "/" .. ecfnDir
+end
+ecfnDir = ecfnDir .. "BGAnimations/ScreenSelectMusic decorations/ecfn/"
+-- 7k: a button in the look of the gray ECFN windows (dark outline, gray
+-- gradient, light top edge), centered on its frame
+local function ecfnButtonBG(w, h)
+	return Def.ActorFrame {
+		InitCommand = function(self)
+			self:visible(hideMSD())
+		end,
+		Def.Quad {
+			InitCommand = function(self)
+				self:zoomto(w + 2, h + 2):diffuse(color("0.05,0.06,0.07,0.9"))
+			end,
+		},
+		Def.Quad {
+			InitCommand = function(self)
+				self:zoomto(w, h):diffusetopedge(color("0.36,0.39,0.45,0.95")):diffusebottomedge(color("0.17,0.19,0.23,0.95"))
+			end,
+		},
+		Def.Quad {
+			InitCommand = function(self)
+				self:y(-h / 2 + 0.5):zoomto(w, 1):diffuse(color("0.70,0.74,0.82,0.7"))
+			end,
+		},
+	}
+end
+local function ecfnCell(w, h, extra)
+	local f = ecfnButtonBG(w, h)
+	if extra then
+		local init = f.InitCommand
+		f.InitCommand = function(self)
+			init(self)
+			extra(self)
+		end
+	end
+	return f
+end
+local function buttonLight(self, on)
+	if hideMSD() then
+		self:diffuse(color("#3f9fff")):diffusealpha(on and 0.4 or 0)
+	else
+		self:diffusealpha(on and 1 or 0.2)
 	end
 end
 
@@ -50,6 +105,11 @@ local t = Def.ActorFrame {
 			self:queuecommand("On")
 			self:visible(true)
 			update = true
+			-- 7k opens on the Best list, freshly built
+			if hideMSD() and bestactive then
+				buildBestList()
+				BroadcastIfActive("UpdateRanking")
+			end
 		else
 			self:queuecommand("Off")
 			update = false
@@ -120,7 +180,7 @@ end
 
 -- one entry per cleared 7k chart: an easy clear on a higher level ranks above
 -- any lamp on a lower one, then the better lamp, then the better percent
-local function buildBestList()
+buildBestList = function()
 	bestList = {}
 	local seen = {}
 	SCOREMAN:SortRecentScoresForGame()
@@ -427,9 +487,11 @@ local function rankingButton(i)
 		UpdateRankingMessageCommand = function(self)
 			self:visible(not hideMSD())
 		end,
+		ecfnCell(rankingTitleSpacing - 2, 22),
 		UIElements.QuadButton(1, 1) .. {
 			InitCommand = function(self)
-				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames")):diffusealpha(0.2)
+				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames"))
+				buttonLight(self, false)
 			end,
 			SetCommand = function(self)
 				if i == rankingSkillset and not recentactive and not bestactive then
@@ -638,6 +700,10 @@ local function recentLabel(i)
 			DisplayProfileRankingLabelsMessageCommand = function(self) -- hacky
 				self:visible(true)
 				self:zoomto(frameWidth - capWideScale(14,10), scoreYspacing * .995)
+				-- 7k: rows on alternating gray like the ECFN ranking
+				if hideMSD() then
+					self:diffuse(color("#b8c0d0")):diffusealpha(i % 2 == 0 and 0.06 or 0.14)
+				end
 			end,
 			MouseDownCommand = function(self, params)
 				if recentactive and params.event == "DeviceButton_left mouse button" and update then
@@ -678,16 +744,14 @@ local function recentButton()
 		InitCommand = function(self)
 			self:xy(rankingX + (3.5) * rankingTitleSpacing, 24 * 0.75):valign(1)
 		end,
+		ecfnCell(rankingTitleSpacing - 2, 22),
 		UIElements.QuadButton(1, 1) .. {
 			InitCommand = function(self)
-				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames")):diffusealpha(0.2)
+				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames"))
+				buttonLight(self, false)
 			end,
 			SetCommand = function(self)
-				if recentactive then
-					self:diffusealpha(1)
-				else
-					self:diffusealpha(0.2)
-				end
+				buttonLight(self, recentactive)
 			end,
 			MouseDownCommand = function(self, params)
 				if params.event == "DeviceButton_left mouse button" and update then
@@ -717,13 +781,13 @@ local function recentButton()
 				self:GetParent():GetChild("RecentButtonTxt"):diffusealpha(alpha)
 			end,
 		},
-		LoadFont("Common Large") .. {
+		LoadFont(hideMSD() and "Common Normal" or "Common Large") .. {
 			Name = "RecentButtonTxt",
 			InitCommand = function(self)
-				self:addy(-1):diffuse(getMainColor("positive")):maxwidth(rankingTitleSpacing * 2):zoom(0.42)
+				self:addy(-1):diffuse(getMainColor("positive")):maxwidth(rankingTitleSpacing * 2):zoom(hideMSD() and 0.4 or 0.42)
 			end,
 			BeginCommand = function(self)
-				self:settext(translated_info["Recent"])
+				self:settext(hideMSD() and string.upper(translated_info["Recent"]) or translated_info["Recent"])
 			end
 		}
 	}
@@ -735,16 +799,14 @@ local function percentButton()
 		InitCommand = function(self)
 			self:xy(rankingX + (2.5) * rankingTitleSpacing, 24 * 0.75):valign(1)
 		end,
+		ecfnCell(rankingTitleSpacing - 2, 22),
 		UIElements.QuadButton(1, 1) .. {
 			InitCommand = function(self)
-				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames")):diffusealpha(0.2)
+				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames"))
+				buttonLight(self, false)
 			end,
 			SetCommand = function(self)
-				if percentactive then
-					self:diffusealpha(1)
-				else
-					self:diffusealpha(0.2)
-				end
+				buttonLight(self, percentactive)
 			end,
 			MouseDownCommand = function(self, params)
 				if params.event == "DeviceButton_left mouse button" and update then
@@ -779,13 +841,13 @@ local function percentButton()
 				self:GetParent():GetChild("PercentButtonTxt"):diffusealpha(alpha)
 			end,
 		},
-		LoadFont("Common Large") .. {
+		LoadFont(hideMSD() and "Common Normal" or "Common Large") .. {
 			Name = "PercentButtonTxt",
 			InitCommand = function(self)
-				self:addy(-1):diffuse(getMainColor("positive")):maxwidth(rankingTitleSpacing * 2):zoom(0.42)
+				self:addy(-1):diffuse(getMainColor("positive")):maxwidth(rankingTitleSpacing * 2):zoom(hideMSD() and 0.4 or 0.42)
 			end,
 			BeginCommand = function(self)
-				self:settext(translated_info["Percent"])
+				self:settext(hideMSD() and string.upper(translated_info["Percent"]) or translated_info["Percent"])
 			end
 		}
 	}
@@ -862,14 +924,15 @@ local function bestLabel(i)
 				self:diffuse(getGradeColor(entry.score:GetWifeGrade()))
 			end
 		},
-		LoadFont("Common Large") .. {
+		-- the ECFN clear name (E-CLEAR, H-CLEAR, F-COMBO...) of the lamp
+		Def.Sprite {
 			Name = "besttext6",
+			Texture = ecfnDir .. "state_clear 3x11.png",
 			InitCommand = function(self)
-				self:halign(0.5):zoom(fontScale):x(300):maxwidth(120)
+				self:animate(false):halign(0.5):x(306):zoomto(48, 8.4)
 			end,
 			DisplayBestCommand = function(self)
-				self:settext(getBMSLampInfo(entry.lamp, 1))
-				self:diffuse(getBMSLampInfo(entry.lamp, 2))
+				self:setstate(getBMSLampFrame(entry.score) * 3)
 			end
 		},
 		LoadFont("Common Normal") .. {
@@ -887,6 +950,10 @@ local function bestLabel(i)
 			end,
 			DisplayBestCommand = function(self)
 				self:zoomto(frameWidth - capWideScale(14,10), scoreYspacing * .995)
+				-- 7k: rows on alternating gray like the ECFN ranking
+				if hideMSD() then
+					self:diffuse(color("#b8c0d0")):diffusealpha(i % 2 == 0 and 0.06 or 0.14)
+				end
 			end,
 			MouseDownCommand = function(self, params)
 				if bestactive and update and entry and entry.song and params.event == "DeviceButton_left mouse button" then
@@ -916,16 +983,14 @@ local function bestButton()
 		BeginCommand = function(self)
 			self:visible(hideMSD())
 		end,
+		ecfnCell(rankingTitleSpacing - 2, 22),
 		UIElements.QuadButton(1, 1) .. {
 			InitCommand = function(self)
-				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames")):diffusealpha(0.2)
+				self:zoomto(rankingTitleSpacing, 26):diffuse(getMainColor("frames"))
+				buttonLight(self, false)
 			end,
 			SetCommand = function(self)
-				if bestactive then
-					self:diffusealpha(1)
-				else
-					self:diffusealpha(0.2)
-				end
+				buttonLight(self, bestactive)
 			end,
 			MouseDownCommand = function(self, params)
 				if params.event == "DeviceButton_left mouse button" and update and hideMSD() then
@@ -934,7 +999,7 @@ local function bestButton()
 					showOnline = false
 					rankingSkillset = 1
 					rankingPage = 1
-					bestactive = not bestactive
+					bestactive = true
 					if bestactive then
 						buildBestList()
 					end
@@ -951,13 +1016,13 @@ local function bestButton()
 				self:GetParent():GetChild("BestButtonTxt"):diffusealpha(1)
 			end,
 		},
-		LoadFont("Common Large") .. {
+		LoadFont(hideMSD() and "Common Normal" or "Common Large") .. {
 			Name = "BestButtonTxt",
 			InitCommand = function(self)
-				self:addy(-1):diffuse(getMainColor("positive")):maxwidth(rankingTitleSpacing * 2):zoom(0.42)
+				self:addy(-1):diffuse(getMainColor("positive")):maxwidth(rankingTitleSpacing * 2):zoom(hideMSD() and 0.4 or 0.42)
 			end,
 			BeginCommand = function(self)
-				self:settext(translated_info["Best"])
+				self:settext(hideMSD() and string.upper(translated_info["Best"]) or translated_info["Best"])
 			end
 		}
 	}
@@ -1104,9 +1169,12 @@ r[#r + 1] = Def.ActorFrame {
 			self:visible(false)
 		end
 	end,
+	ecfnCell(42, 18, function(self)
+		self:xy(capWideScale(300,336.25) + 21, 1.5)
+	end),
 	UIElements.QuadButton(1, 1) .. {
 		InitCommand = function(self)
-			self:xy(capWideScale(300,336.25), -8.5):zoomto(40, 20):halign(0):valign(0):diffuse(getMainColor("frames")):diffusealpha(0.2)
+			self:xy(capWideScale(300,336.25), -8.5):zoomto(40, 20):halign(0):valign(0):diffuse(getMainColor("frames")):diffusealpha(hideMSD() and 0 or 0.2)
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
@@ -1128,15 +1196,18 @@ r[#r + 1] = Def.ActorFrame {
 		end,
 
 	},
-	LoadFont("Common Large") .. {
+	LoadFont(hideMSD() and "Common Normal" or "Common Large") .. {
 		Name = "NextP",
 		InitCommand = function(self)
-			self:x(capWideScale(304.25,340)):halign(0):zoom(0.3):diffuse(getMainColor("positive")):settext(translated_info["NextPage"])
+			self:x(capWideScale(304.25,340)):halign(0):zoom(hideMSD() and 0.36 or 0.3):diffuse(getMainColor("positive")):settext(hideMSD() and string.upper(translated_info["NextPage"]) or translated_info["NextPage"])
 		end,
 	},
+	ecfnCell(67, 18, function(self)
+		self:xy(-2 + 33.5, 1.5)
+	end),
 	UIElements.QuadButton(1, 1) .. {
 		InitCommand = function(self)
-			self:xy(-2,-8.5):zoomto(65, 20):halign(0):valign(0):diffuse(getMainColor("frames")):diffusealpha(0.2)
+			self:xy(-2,-8.5):zoomto(65, 20):halign(0):valign(0):diffuse(getMainColor("frames")):diffusealpha(hideMSD() and 0 or 0.2)
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
@@ -1157,10 +1228,10 @@ r[#r + 1] = Def.ActorFrame {
 			self:GetParent():GetChild("PrevP"):diffusealpha(alpha)
 		end,
 	},
-	LoadFont("Common Large") .. {
+	LoadFont(hideMSD() and "Common Normal" or "Common Large") .. {
 		Name = "PrevP",
 		InitCommand = function(self)
-			self:halign(0):zoom(0.3):diffuse(getMainColor("positive")):settext(translated_info["PrevPage"])
+			self:halign(0):zoom(hideMSD() and 0.36 or 0.3):diffuse(getMainColor("positive")):settext(hideMSD() and string.upper(translated_info["PrevPage"]) or translated_info["PrevPage"])
 		end,
 	},
 }

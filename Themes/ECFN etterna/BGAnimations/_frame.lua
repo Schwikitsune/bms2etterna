@@ -4,7 +4,7 @@ local bottomFrameHeight = 54
 local borderWidth = 4
 -- 7k song select: see-through bars over the ECFN background
 local ecfn = Var("ecfn") == true
-local frameColor = ecfn and color("0,0,0,0.7") or getMainColor("frames")
+local frameColor = ecfn and color("0,0,0,0") or getMainColor("frames")
 if ecfn then
 	borderWidth = 1
 end
@@ -41,9 +41,32 @@ end
 
 t[#t + 1] = Def.Quad {
 	InitCommand = function(self)
-		self:xy(0, SCREEN_HEIGHT - bottomFrameHeight):halign(0):valign(0):zoomto(bottomWidth, borderWidth):diffuse(borderColor):diffusealpha(0.5)
+		self:xy(0, SCREEN_HEIGHT - bottomFrameHeight):halign(0):valign(0):zoomto(bottomWidth, borderWidth):diffuse(borderColor):diffusealpha(ecfn and 0 or 0.5)
 	end
 }
+
+-- 7k song select: an ECFN style panel, a lighter strip at the top and a line
+-- between the profile and the rest
+if ecfn then
+	-- a gray ECFN window (SCORE DATA without its header) behind the bar
+	local dir = THEME:GetCurrentThemeDirectory()
+	if dir:sub(1, 1) ~= "/" then
+		dir = "/" .. dir
+	end
+	dir = dir .. "BGAnimations/ScreenSelectMusic decorations/ecfn/"
+	t[#t + 1] = Def.Sprite {
+		Texture = dir .. "win_bottom.png",
+		InitCommand = function(self)
+			self:xy(0, SCREEN_HEIGHT + 1):halign(0):valign(1):zoomto(bottomWidth + 2, bottomFrameHeight + 3)
+		end
+	}
+	t[#t + 1] = Def.Quad {
+		InitCommand = function(self)
+			self:xy(ecfnX(560), SCREEN_HEIGHT - bottomFrameHeight + 6):halign(0):valign(0)
+			self:zoomto(1, bottomFrameHeight - 12):diffuse(color("#ffffff")):diffusealpha(0.25)
+		end
+	}
+end
 
 --[[
 if themeConfig:get_data().global.TipType == 2 or themeConfig:get_data().global.TipType == 3 then

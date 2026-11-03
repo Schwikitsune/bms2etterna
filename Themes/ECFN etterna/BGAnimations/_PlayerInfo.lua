@@ -17,8 +17,8 @@ local AvatarY = SCREEN_HEIGHT - 50
 -- right and in the middle moves into it (the clock stays in the corner like ECFN)
 local ecfn = Var("ecfn") == true
 local rightX = ecfn and ecfnX(1160) - 3 or SCREEN_WIDTH - 3
-local middleX = ecfn and ecfnX(890) or SCREEN_CENTER_X
-local uploadX = ecfn and ecfnX(890) or SCREEN_WIDTH * 2/3
+local middleX = ecfn and ecfnX(780) or SCREEN_CENTER_X
+local uploadX = ecfn and ecfnX(700) or SCREEN_WIDTH * 2/3
 local playerRating = 0
 local uploadbarwidth = 100
 local uploadbarheight = 10
@@ -28,7 +28,7 @@ local nonButtonColor = ColorMultiplier(getMainColor("positive"), 1.25)
 -- the ECFN panels use white and pale blue text
 if ecfn then
 	ButtonColor = color("#ffffff")
-	nonButtonColor = color("#a8c8ff")
+	nonButtonColor = color("#d8dde6")
 end
 --------UNCOMMENT THIS NEXT LINE IF YOU WANT THE OLD LOOK--------
 --nonButtonColor = getMainColor("positive")
@@ -231,12 +231,17 @@ t[#t + 1] = Def.ActorFrame {
 			self:halign(0)
 			self:xy(AvatarX + 54, AvatarY + 8)
 			self:zoom(0.55)
-			self:maxwidth(capWideScale(360,500))
+			self:maxwidth(ecfn and 190 / 0.55 or capWideScale(360,500))
 			self:maxheight(22)
 			self:diffuse(ButtonColor)
 		end,
 		SetCommand = function(self)
-			self:settextf("%s: %5.2f", profileName, playerRating)
+			if ecfn then
+				-- the rating goes in the PLAYER DATA rows
+				self:settext(profileName)
+			else
+				self:settextf("%s: %5.2f", profileName, playerRating)
+			end
 			if profileName == "Default Profile" or profileName == "" then
 				easyInputStringWithFunction(
 					translated_info["ProfileNew"],
@@ -252,6 +257,10 @@ t[#t + 1] = Def.ActorFrame {
 			end
 		end,
 		ProfileRenamedMessageCommand = function(self, params)
+			if ecfn then
+				self:settext(params.doot)
+				return
+			end
 			self:settextf("%s: %5.2f", params.doot, playerRating)
 		end,
 		MouseOverCommand = function(self)
@@ -385,7 +394,7 @@ t[#t + 1] = Def.ActorFrame {
 	},
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(AvatarX + 54, AvatarY + 21):halign(0):zoom(0.35):diffuse(nonButtonColor)
+			self:xy(AvatarX + 54, AvatarY + 21):halign(0):zoom(0.35):diffuse(nonButtonColor):visible(not ecfn)
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("Set")
@@ -407,7 +416,7 @@ t[#t + 1] = Def.ActorFrame {
 	},
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(AvatarX + 54, AvatarY + 31.5):halign(0):zoom(0.35):diffuse(nonButtonColor)
+			self:xy(AvatarX + 54, AvatarY + 31.5):halign(0):zoom(0.35):diffuse(nonButtonColor):visible(not ecfn)
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("Set")
@@ -419,7 +428,7 @@ t[#t + 1] = Def.ActorFrame {
 	},
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(AvatarX + 54, AvatarY + 42):halign(0):zoom(0.35):diffuse(nonButtonColor)
+			self:xy(AvatarX + 54, AvatarY + 42):halign(0):zoom(0.35):diffuse(nonButtonColor):visible(not ecfn)
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("Set")
@@ -442,6 +451,11 @@ t[#t + 1] = Def.ActorFrame {
 			self:queuecommand("Set")
 		end,
 		SetCommand = function(self)
+			-- the ECFN song select has these in its 7KEY panel
+			if ecfn then
+				self:visible(false)
+				return
+			end
 			local online = IsNetSMOnline() and IsSMOnlineLoggedIn() and NSMAN:IsETTP()
 			self:y(AvatarY + 41 - (online and 18 or 0))
 			-- 7k uses the LR2 judge rank instead of the etterna judge
@@ -501,7 +515,7 @@ t[#t + 1] = Def.ActorFrame {
 			self:queuecommand("Set")
 		end,
 		SetCommand = function(self)
-			if not hideMSD() then
+			if not hideMSD() or ecfn then
 				self:visible(false)
 				return
 			end
@@ -541,7 +555,7 @@ t[#t + 1] = Def.ActorFrame {
 			self:queuecommand("Set")
 		end,
 		SetCommand = function(self)
-			if not hideMSD() then
+			if not hideMSD() or ecfn then
 				self:visible(false)
 				return
 			end
@@ -588,7 +602,7 @@ t[#t + 1] = Def.ActorFrame {
 			self:queuecommand("Set")
 		end,
 		SetCommand = function(self)
-			if not hideMSD() then
+			if not hideMSD() or ecfn then
 				self:visible(false)
 				return
 			end
@@ -787,6 +801,41 @@ t[#t + 1] = Def.ActorFrame {
 		end
 	}
 }
+
+-- 7k song select: PLAYER DATA rows like the ECFN panels, labels on the left
+-- in pale blue and the numbers on the right
+if ecfn then
+	local rows = {
+		{56, 150, AvatarY + 22, "RATING", function() return string.format("%5.2f", playerRating) end},
+		{56, 150, AvatarY + 37, "PLAYS", function() return tostring(playCount) end},
+		{162, 245, AvatarY + 22, "TIME", function() return SecondsToHHMMSS(playTime) end},
+		{162, 245, AvatarY + 37, "NOTES", function() return tostring(noteCount) end},
+	}
+	local block = Def.ActorFrame {
+		BeginCommand = function(self)
+			self:sleep(0.05):queuecommand("Set")
+		end,
+		PlayerRatingUpdatedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
+	}
+	for _, r in ipairs(rows) do
+		block[#block + 1] = LoadFont("Common Normal") .. {
+			InitCommand = function(self)
+				self:xy(r[1], r[3]):halign(0):zoom(0.36):diffuse(color("#ffffff")):settext(r[4])
+			end,
+		}
+		block[#block + 1] = LoadFont("Common Normal") .. {
+			InitCommand = function(self)
+				self:xy(r[2], r[3]):halign(1):zoom(0.4):diffuse(color("#ffffff"))
+			end,
+			SetCommand = function(self)
+				self:settext(r[5]())
+			end,
+		}
+	end
+	t[#t + 1] = block
+end
 
 local function UpdateAvatar(self)
 	if getAvatarUpdateStatus() then
