@@ -3,6 +3,10 @@ function getPlayerOptionsList(itemSet)
 	local rules = "Judge,Life,Fail"
 	if hideMSD() then
 		rules = "JudgeRank,Gauge,Fail"
+		-- charts with their own #RANK / #JUDGERANK / #DEFEXRANK always play on it
+		if getBMSChartJudgeRank() then
+			rules = "Gauge,Fail"
+		end
 	end
 	local Items = {
 		["Main"] = "Speed,RateList,NoteSk,RS,PRAC,CG,ScrollDir,Center,Persp,BG,SF,Background," .. rules .. ",Assist,Score",

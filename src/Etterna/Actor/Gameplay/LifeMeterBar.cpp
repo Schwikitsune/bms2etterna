@@ -613,11 +613,17 @@ FindBMSValue(const Song* song,
 		if (files.empty())
 			FILEMAN->GetDirListingWithMultipleExtensions(
 			  song->GetSongDir(), { "ssc", "sm" }, files, ONLY_FILE, true);
+		// BMS2SM writes the bms #RANK as #JUDGERANK
+		std::vector<std::string> tags{ tag };
+		if (tag == "RANK")
+			tags.insert(tags.begin(), "JUDGERANK");
 		for (const auto& file : files) {
-			const auto value = ReadSMValue(file, tag);
-			if (valid(value)) {
-				source = "#" + tag;
-				return value;
+			for (const auto& t : tags) {
+				const auto value = ReadSMValue(file, t);
+				if (valid(value)) {
+					source = "#" + t;
+					return value;
+				}
 			}
 		}
 	}

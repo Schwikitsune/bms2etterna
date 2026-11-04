@@ -164,25 +164,61 @@ if hideMSD() then
     t[#t + 1] = levelDigits
 
     -- clear lamp of the best play over the song's 7k charts
+    -- clear lamp of a song: the best play over its 7k charts. The cache is
+    -- emptied every time the song select loads.
+    local function songLamp(song)
+        local key = song:GetSongDir()
+        local frame = ecfnLampCache and ecfnLampCache[key]
+        if frame == nil then
+            frame = 0
+            for _, st in ipairs(song:GetAllSteps()) do
+                if st:GetStepsType() == "StepsType_Kb7_Single" then
+                    frame = math.max(frame, getBestBMSLampFrame(st:GetChartKey()))
+                end
+            end
+            if ecfnLampCache then
+                ecfnLampCache[key] = frame
+            end
+        end
+        return frame
+    end
+
+    -- a folder like beatoraja: its lamp is the lowest lamp of its songs (none
+    -- while any song is unplayed), and a bar under it shows how many songs
+    -- have each lamp
+    local function folderLamps(group)
+        local key = "folder:" .. group
+        local f = ecfnLampCache and ecfnLampCache[key]
+        if f == nil then
+            f = {lamp = 10, counts = {}, total = 0}
+            for i = 0, 10 do
+                f.counts[i] = 0
+            end
+            for _, song in ipairs(SONGMAN:GetSongsInGroup(group) or {}) do
+                local l = songLamp(song)
+                f.counts[l] = f.counts[l] + 1
+                f.total = f.total + 1
+                f.lamp = math.min(f.lamp, l)
+            end
+            if f.total == 0 then
+                f.lamp = 0
+            end
+            if ecfnLampCache then
+                ecfnLampCache[key] = f
+            end
+        end
+        return f
+    end
+    local isFolder = {SectionCollapsed = true, SectionExpanded = true}
+
     local lamps = Def.ActorFrame {
         Name = "Lamp",
         SetCommand = function(self, params)
             local frame = 0
             if params.Type == "Song" and params.Song then
-                -- the cache is emptied every time the song select loads
-                local key = params.Song:GetSongDir()
-                frame = ecfnLampCache and ecfnLampCache[key]
-                if frame == nil then
-                    frame = 0
-                    for _, st in ipairs(params.Song:GetAllSteps()) do
-                        if st:GetStepsType() == "StepsType_Kb7_Single" then
-                            frame = math.max(frame, getBestBMSLampFrame(st:GetChartKey()))
-                        end
-                    end
-                    if ecfnLampCache then
-                        ecfnLampCache[key] = frame
-                    end
-                end
+                frame = songLamp(params.Song)
+            elseif isFolder[params.Type] and params.Text and params.Text ~= "" then
+                frame = folderLamps(params.Text).lamp
             end
             for i = 1, 10 do
                 self:GetChild("L" .. i):visible(i == frame)
@@ -206,6 +242,38 @@ if hideMSD() then
         }
     end
     t[#t + 1] = lamps
+
+    -- the folder's lamp graph, 400x4 at x 35 along the bottom of the bar, in
+    -- the colors of the skin's lamp.png, best lamps first
+    local graphColors = {
+        [0] = "#484848", "#c53838", "#c042e0", "#eea9ff", "#57ff4a", "#ffdd58",
+        "#f5f5f5", "#fffc4a", "#5ffff2", "#6aff5e", "#fdff63",
+    }
+    local graph = Def.ActorFrame {
+        Name = "LampGraph",
+        SetCommand = function(self, params)
+            local f = isFolder[params.Type] and params.Text and params.Text ~= "" and folderLamps(params.Text)
+            self:visible(f and f.total > 0 or false)
+            if not f or f.total == 0 then
+                return
+            end
+            local x = 35 * s
+            for l = 10, 0, -1 do
+                local w = 400 * s * f.counts[l] / f.total
+                self:GetChild("G" .. l):x(x):zoomto(w, 4 * s)
+                x = x + w
+            end
+        end,
+    }
+    for l = 0, 10 do
+        graph[#graph + 1] = Def.Quad {
+            Name = "G" .. l,
+            InitCommand = function(self)
+                self:halign(0):y(21 * s):diffuse(color(graphColors[l]))
+            end,
+        }
+    end
+    t[#t + 1] = graph
 
     t[#t + 1] = UIElements.QuadButton(1, 1) .. {
         InitCommand = function(self)

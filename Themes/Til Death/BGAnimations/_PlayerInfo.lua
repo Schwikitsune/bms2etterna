@@ -425,6 +425,10 @@ t[#t + 1] = Def.ActorFrame {
 		BMSOptionChangedMessageCommand = function(self)
 			self:queuecommand("Set")
 		end,
+		-- the chart's own #RANK / #JUDGERANK shows here, so follow the selected chart
+		CurrentStepsChangedMessageCommand = function(self)
+			self:queuecommand("Set")
+		end,
 		SetCommand = function(self)
 			local online = IsNetSMOnline() and IsSMOnlineLoggedIn() and NSMAN:IsETTP()
 			self:y(AvatarY + 41 - (online and 18 or 0))

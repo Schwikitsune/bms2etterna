@@ -1,0 +1,12 @@
+lr2skin (kb7)
+
+Built from the LR2beta3 default play skin that ships with Lunatic Rave 2
+(LR2files/Theme/LR2/Play, "LR2 default" frame and bomb textures, skin by cyclia).
+Source coordinates come from Play/7keys/7_LL0.csv.
+
+- notes, LN head/body/tail and mines: white for keys 1,3,5,7, blue for 2,4,6
+- judge line and LR2 key beams on key press
+- LR2 bomb on PGREAT/GREAT/GOOD and LN release, LN flame while holding
+- no scratch lane: kb7 is 7 keys, converted charts drop the turntable
+
+Tweaks: bomb and LN flame size at the top of "Fallback Explosion.lua".

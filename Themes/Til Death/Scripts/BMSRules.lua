@@ -80,6 +80,10 @@ end
 
 -- moves the setting by delta, stopping at the ends (the lane arrangement wraps around)
 function changeBMSOption(kind, delta)
+	-- the chart's own judge rank can't be overridden
+	if kind == "JudgeRank" and getBMSChartJudgeRank() then
+		return
+	end
 	local n = #bmsOptionValues[kind]
 	local i = getBMSOption(kind) + delta
 	if kind == "Arrange" then
